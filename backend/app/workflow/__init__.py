@@ -1,1 +1,1 @@
-"""Workflow graph primitives and placeholder execution state."""
+"""Workflow graph primitives and execution state."""

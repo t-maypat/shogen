@@ -61,12 +61,15 @@ class CreativeVariantSummary(BaseModel):
 
     id: uuid.UUID
     run_id: uuid.UUID
+    client_variant_id: str
     persona_id: str
     channel: str
     journey_stage: str
     primary_kpi: str
     revision_number: int
     status: str
+    claims: list[str]
+    disclosure: str | None
     copy_payload: dict[str, Any] = Field(alias="copy")
     parent_variant_id: uuid.UUID | None
     created_at: datetime

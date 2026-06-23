@@ -183,7 +183,7 @@ def test_get_campaign_returns_not_found_error(client: TestClient) -> None:
     assert payload["error"]["code"] == "NOT_FOUND"
 
 
-def test_run_campaign_persists_placeholder_workflow_outputs(
+def test_run_campaign_persists_generated_workflow_outputs(
     client_with_session_factory: tuple[TestClient, sessionmaker[Session]],
     valid_campaign_payload: dict,
 ) -> None:
@@ -212,9 +212,38 @@ def test_run_campaign_persists_placeholder_workflow_outputs(
 
     assert campaign_state["latest_run"]["status"] == "approval_required"
     assert campaign_state["latest_run"]["current_stage"] == "approval_required"
-    assert campaign_state["strategy"]["placeholder"] is True
-    assert campaign_state["journey"]["placeholder"] is True
+    assert [persona["id"] for persona in campaign_state["strategy"]["personas"]] == [
+        "p1",
+        "p2",
+        "p3",
+    ]
+    assert len(campaign_state["strategy"]["personas"]) == 3
+    assert len(campaign_state["strategy"]["kpis"]) == 3
     assert len(campaign_state["journey"]["steps"]) == 9
+    assert (
+        sum(step["allocation_percent"] for step in campaign_state["journey"]["steps"]) == 100
+    )
+    assert len(campaign_state["creative_variants"]) == 9
+    assert {
+        (variant["persona_id"], variant["channel"])
+        for variant in campaign_state["creative_variants"]
+    } == {
+        ("p1", "google_search"),
+        ("p1", "linkedin_sponsored_post"),
+        ("p1", "email"),
+        ("p2", "google_search"),
+        ("p2", "linkedin_sponsored_post"),
+        ("p2", "email"),
+        ("p3", "google_search"),
+        ("p3", "linkedin_sponsored_post"),
+        ("p3", "email"),
+    }
+    assert all(
+        variant["claims"] for variant in campaign_state["creative_variants"]
+    )
+    assert all(
+        variant["copy"] for variant in campaign_state["creative_variants"]
+    )
     assert len(campaign_state["events"]) >= 11
     assert campaign_state["events"][0]["event_type"] == "workflow.started"
     assert campaign_state["events"][-1]["stage"] == "approval_required"
@@ -228,13 +257,22 @@ def test_run_campaign_persists_placeholder_workflow_outputs(
             .all()
         )
 
-    assert {stage_output.stage_name for stage_output in stage_outputs} == {
+    stage_outputs_by_name = {
+        stage_output.stage_name: stage_output for stage_output in stage_outputs
+    }
+    assert set(stage_outputs_by_name) == {
         "strategy",
         "journey",
         "creative",
         "policy",
         "approval_required",
     }
+    assert stage_outputs_by_name["strategy"].prompt_version == "strategy.v1"
+    assert stage_outputs_by_name["strategy"].model_name == "fake-shogen-campaign-model"
+    assert stage_outputs_by_name["journey"].prompt_version == "journey.det.v1"
+    assert stage_outputs_by_name["journey"].model_name == "deterministic-journey-planner"
+    assert stage_outputs_by_name["creative"].prompt_version == "creative.v1"
+    assert stage_outputs_by_name["creative"].model_name == "fake-shogen-campaign-model"
 
 
 def test_campaign_events_endpoint_streams_sse_payloads(

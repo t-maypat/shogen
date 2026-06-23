@@ -27,7 +27,7 @@ from app.services.events import EventService
 from app.services.workflows import (
     WorkflowAlreadyRunningError,
     WorkflowService,
-    start_placeholder_workflow,
+    start_campaign_workflow,
 )
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
@@ -108,7 +108,7 @@ def run_campaign(
             },
         ) from exc
 
-    start_placeholder_workflow(
+    start_campaign_workflow(
         session_factory=_session_factory_from_session(session),
         campaign_id=campaign_id,
         run_id=run.id,

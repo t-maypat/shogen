@@ -1,23 +1,42 @@
 from __future__ import annotations
 
-import re
+import logging
 import threading
 import time
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.ai.provider import AzureOpenAIModelProvider, ModelProvider, ModelProviderError
+from app.core.config import Settings, get_settings
 from app.db.models import Campaign, WorkflowRun
 from app.repositories.campaigns import CampaignRepository
+from app.schemas.brief import CampaignBrief
+from app.schemas.creative import CreativeVariantOut
+from app.schemas.journey import JourneyOutput
+from app.schemas.strategy import StrategyOutput
 from app.services.campaigns import CampaignNotFoundError
 from app.services.events import EventService
-from app.workflow.graph import build_placeholder_graph
+from app.services.generation import CampaignGenerationService, build_default_fake_provider
+from app.workflow.graph import build_workflow_graph
 from app.workflow.state import WorkflowMode, WorkflowState
 
-PLACEHOLDER_SCHEMA_VERSION = "placeholder.v1"
-PLACEHOLDER_STAGE_DELAY_SECONDS = 0.05
+logger = logging.getLogger(__name__)
+
+WORKFLOW_STAGE_DELAY_SECONDS = 0.05
+
+
+@dataclass(slots=True)
+class StageExecutionResult:
+    payload: dict[str, Any]
+    schema_version: str
+    prompt_version: str | None = None
+    model_name: str | None = None
+    duration_ms: int | None = None
+    creative_variants: list[CreativeVariantOut] = field(default_factory=list)
 
 
 class WorkflowAlreadyRunningError(Exception):
@@ -66,7 +85,7 @@ class WorkflowService:
         return run
 
 
-class PlaceholderWorkflowRunner:
+class CampaignWorkflowRunner:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self.session_factory = session_factory
 
@@ -86,6 +105,11 @@ class PlaceholderWorkflowRunner:
             if campaign is None or run is None:
                 return
 
+            settings = get_settings()
+            generation_service = CampaignGenerationService(
+                provider=_build_model_provider(settings),
+                timeout_seconds=settings.model_timeout_seconds,
+            )
             state: WorkflowState = {
                 "campaign_id": campaign_id,
                 "run_id": run_id,
@@ -93,12 +117,13 @@ class PlaceholderWorkflowRunner:
                 "brief": campaign.brief_json,
             }
 
-            workflow_graph = build_placeholder_graph(
+            workflow_graph = build_workflow_graph(
                 self._node_handlers(
                     session=session,
                     campaign=campaign,
                     run=run,
                     event_service=event_service,
+                    generation_service=generation_service,
                 )
             )
 
@@ -127,6 +152,7 @@ class PlaceholderWorkflowRunner:
         campaign: Campaign,
         run: WorkflowRun,
         event_service: EventService,
+        generation_service: CampaignGenerationService,
     ) -> dict[str, Any]:
         return {
             "strategy": self._stage_node(
@@ -135,7 +161,10 @@ class PlaceholderWorkflowRunner:
                 run=run,
                 event_service=event_service,
                 stage_name="strategy",
-                build_output=self._build_strategy_output,
+                execute_stage=lambda state: self._execute_strategy_stage(
+                    state=state,
+                    generation_service=generation_service,
+                ),
             ),
             "journey": self._stage_node(
                 session=session,
@@ -143,7 +172,10 @@ class PlaceholderWorkflowRunner:
                 run=run,
                 event_service=event_service,
                 stage_name="journey",
-                build_output=self._build_journey_output,
+                execute_stage=lambda state: self._execute_journey_stage(
+                    state=state,
+                    generation_service=generation_service,
+                ),
             ),
             "creative": self._stage_node(
                 session=session,
@@ -151,7 +183,10 @@ class PlaceholderWorkflowRunner:
                 run=run,
                 event_service=event_service,
                 stage_name="creative",
-                build_output=self._build_creative_output,
+                execute_stage=lambda state: self._execute_creative_stage(
+                    state=state,
+                    generation_service=generation_service,
+                ),
             ),
             "policy": self._stage_node(
                 session=session,
@@ -159,7 +194,7 @@ class PlaceholderWorkflowRunner:
                 run=run,
                 event_service=event_service,
                 stage_name="policy",
-                build_output=self._build_policy_output,
+                execute_stage=self._execute_policy_stage,
             ),
             "approval_required": self._stage_node(
                 session=session,
@@ -167,7 +202,7 @@ class PlaceholderWorkflowRunner:
                 run=run,
                 event_service=event_service,
                 stage_name="approval_required",
-                build_output=self._build_approval_output,
+                execute_stage=self._execute_approval_stage,
                 terminal_status="approval_required",
             ),
         }
@@ -180,7 +215,7 @@ class PlaceholderWorkflowRunner:
         run: WorkflowRun,
         event_service: EventService,
         stage_name: str,
-        build_output: Any,
+        execute_stage: Any,
         terminal_status: str | None = None,
     ) -> Any:
         def node(state: WorkflowState) -> WorkflowState:
@@ -194,18 +229,37 @@ class PlaceholderWorkflowRunner:
             )
             session.commit()
 
-            time.sleep(PLACEHOLDER_STAGE_DELAY_SECONDS)
-            output = build_output(state)
-            state[stage_name] = output
+            time.sleep(WORKFLOW_STAGE_DELAY_SECONDS)
+            stage_result = execute_stage(state)
+            state[stage_name] = stage_result.payload
 
             repository = CampaignRepository(session)
             repository.create_stage_output(
                 campaign_id=campaign.id,
                 run_id=run.id,
                 stage_name=stage_name,
-                schema_version=PLACEHOLDER_SCHEMA_VERSION,
-                output_json=output,
+                schema_version=stage_result.schema_version,
+                prompt_version=stage_result.prompt_version,
+                model_name=stage_result.model_name,
+                duration_ms=stage_result.duration_ms,
+                output_json=stage_result.payload,
             )
+            for variant in stage_result.creative_variants:
+                repository.create_creative_variant(
+                    campaign_id=campaign.id,
+                    run_id=run.id,
+                    persona_id=variant.persona_id,
+                    channel=variant.channel,
+                    journey_stage=variant.journey_stage,
+                    primary_kpi=variant.primary_kpi_id,
+                    status="generated",
+                    copy_json={
+                        "client_variant_id": variant.client_variant_id,
+                        "claims": variant.claims,
+                        "disclosure": variant.disclosure,
+                        "copy": variant.copy_payload.model_dump(mode="json"),
+                    },
+                )
 
             next_status = terminal_status or "completed"
             if terminal_status is not None:
@@ -219,90 +273,73 @@ class PlaceholderWorkflowRunner:
                 event_type="stage.completed",
                 stage=stage_name,
                 status=next_status,
-                display=self._display_summary(stage_name, output),
+                display=self._display_summary(stage_name, stage_result.payload),
             )
             session.commit()
             return state
 
         return node
 
-    def _build_strategy_output(self, state: WorkflowState) -> dict[str, Any]:
-        brief = state["brief"]
-        personas = _build_personas(brief.get("audience_summary", ""))
-        return {
-            "schema_version": PLACEHOLDER_SCHEMA_VERSION,
-            "placeholder": True,
-            "objective": brief.get("objective"),
-            "personas": personas,
-            "kpis": [
-                {
-                    "id": "qualified_signups",
-                    "label": "Qualified signups",
-                    "reason": "Matches the primary campaign objective.",
-                },
-                {
-                    "id": "onboarding_completion_rate",
-                    "label": "Onboarding completion rate",
-                    "reason": "Tracks signup quality beyond initial conversion.",
-                },
-                {
-                    "id": "cost_per_qualified_signup",
-                    "label": "Cost per qualified signup",
-                    "reason": "Keeps paid channel efficiency visible for the demo.",
-                },
-            ],
-            "brand_voice": brief.get("brand_voice", []),
-        }
+    def _execute_strategy_stage(
+        self,
+        *,
+        state: WorkflowState,
+        generation_service: CampaignGenerationService,
+    ) -> StageExecutionResult:
+        brief = CampaignBrief.model_validate(state["brief"])
+        strategy, metadata = generation_service.generate_strategy(brief)
+        return StageExecutionResult(
+            payload=strategy.model_dump(mode="json"),
+            schema_version=metadata["schema_version"],
+            prompt_version=metadata["prompt_version"],
+            model_name=metadata["model_name"],
+            duration_ms=metadata["duration_ms"],
+        )
 
-    def _build_journey_output(self, state: WorkflowState) -> dict[str, Any]:
+    def _execute_journey_stage(
+        self,
+        *,
+        state: WorkflowState,
+        generation_service: CampaignGenerationService,
+    ) -> StageExecutionResult:
+        brief = CampaignBrief.model_validate(state["brief"])
         strategy = state["strategy"]
-        channels = state["brief"].get("channels", [])
-        kpis = strategy["kpis"]
-        steps = []
-        for persona_index, persona in enumerate(strategy["personas"]):
-            for channel in channels:
-                steps.append(
-                    {
-                        "persona_id": persona["id"],
-                        "channel": channel,
-                        "journey_stage": _channel_stage(channel),
-                        "primary_kpi": kpis[persona_index % len(kpis)]["id"],
-                        "message_focus": (
-                            f"{persona['name']} sees a {channel.replace('_', ' ')}"
-                            " touchpoint tailored to the brief objective."
-                        ),
-                    }
-                )
+        journey, metadata = generation_service.generate_journey(
+            brief=brief,
+            strategy=_strategy_from_payload(strategy),
+        )
+        return StageExecutionResult(
+            payload=journey.model_dump(mode="json"),
+            schema_version=metadata["schema_version"],
+            prompt_version=metadata["prompt_version"],
+            model_name=metadata["model_name"],
+            duration_ms=metadata["duration_ms"],
+        )
 
-        return {
-            "schema_version": PLACEHOLDER_SCHEMA_VERSION,
-            "placeholder": True,
-            "steps": steps,
-        }
+    def _execute_creative_stage(
+        self,
+        *,
+        state: WorkflowState,
+        generation_service: CampaignGenerationService,
+    ) -> StageExecutionResult:
+        brief = CampaignBrief.model_validate(state["brief"])
+        strategy = _strategy_from_payload(state["strategy"])
+        journey = _journey_from_payload(state["journey"])
+        creative, metadata = generation_service.generate_creative(
+            brief=brief,
+            strategy=strategy,
+            journey=journey,
+        )
+        return StageExecutionResult(
+            payload=creative.model_dump(mode="json", by_alias=True),
+            schema_version=metadata["schema_version"],
+            prompt_version=metadata["prompt_version"],
+            model_name=metadata["model_name"],
+            duration_ms=metadata["duration_ms"],
+            creative_variants=creative.variants,
+        )
 
-    def _build_creative_output(self, state: WorkflowState) -> dict[str, Any]:
-        journey = state["journey"]
-        variants = [
-            {
-                "persona_id": step["persona_id"],
-                "channel": step["channel"],
-                "journey_stage": step["journey_stage"],
-                "primary_kpi": step["primary_kpi"],
-                "concept": (
-                    f"Placeholder creative for {step['persona_id']} on"
-                    f" {step['channel']}."
-                ),
-            }
-            for step in journey["steps"]
-        ]
-        return {
-            "schema_version": PLACEHOLDER_SCHEMA_VERSION,
-            "placeholder": True,
-            "variant_count": len(variants),
-            "variants": variants,
-        }
-
-    def _build_policy_output(self, state: WorkflowState) -> dict[str, Any]:
+    def _execute_policy_stage(self, state: WorkflowState) -> StageExecutionResult:
         risky_claims = state["brief"].get("risky_claims", [])
         findings = [
             {
@@ -311,26 +348,28 @@ class PlaceholderWorkflowRunner:
             }
             for claim in risky_claims
         ]
-        return {
-            "schema_version": PLACEHOLDER_SCHEMA_VERSION,
-            "placeholder": True,
-            "summary": {
-                "blocking_findings": 0,
-                "warning_findings": len(findings),
+        return StageExecutionResult(
+            payload={
+                "summary": {
+                    "blocking_findings": 0,
+                    "warning_findings": len(findings),
+                },
+                "findings": findings,
             },
-            "findings": findings,
-        }
+            schema_version="policy.placeholder.v1",
+        )
 
-    def _build_approval_output(self, state: WorkflowState) -> dict[str, Any]:
+    def _execute_approval_stage(self, state: WorkflowState) -> StageExecutionResult:
         policy = state["policy"]
         summary = policy["summary"]
-        return {
-            "schema_version": PLACEHOLDER_SCHEMA_VERSION,
-            "placeholder": True,
-            "ready_for_approval": summary["blocking_findings"] == 0,
-            "blocking_findings": summary["blocking_findings"],
-            "warning_findings": summary["warning_findings"],
-        }
+        return StageExecutionResult(
+            payload={
+                "ready_for_approval": summary["blocking_findings"] == 0,
+                "blocking_findings": summary["blocking_findings"],
+                "warning_findings": summary["warning_findings"],
+            },
+            schema_version="approval.placeholder.v1",
+        )
 
     @staticmethod
     def _display_summary(stage_name: str, output: dict[str, Any]) -> dict[str, Any]:
@@ -345,7 +384,7 @@ class PlaceholderWorkflowRunner:
                 "channels": len({step["channel"] for step in output["steps"]}),
             }
         if stage_name == "creative":
-            return {"variants": output["variant_count"]}
+            return {"variants": len(output["variants"])}
         if stage_name == "policy":
             return output["summary"]
         return {
@@ -354,14 +393,14 @@ class PlaceholderWorkflowRunner:
         }
 
 
-def start_placeholder_workflow(
+def start_campaign_workflow(
     *,
     session_factory: sessionmaker[Session],
     campaign_id: uuid.UUID,
     run_id: uuid.UUID,
     mode: WorkflowMode,
 ) -> None:
-    runner = PlaceholderWorkflowRunner(session_factory)
+    runner = CampaignWorkflowRunner(session_factory)
     thread = threading.Thread(
         target=runner.run,
         kwargs={
@@ -375,39 +414,38 @@ def start_placeholder_workflow(
     thread.start()
 
 
-def _build_personas(audience_summary: str) -> list[dict[str, str]]:
-    raw_segments = [
-        segment.strip(" .")
-        for segment in re.split(r",| and ", audience_summary)
-        if segment.strip(" .")
-    ]
-    segments = raw_segments[:3]
-    while len(segments) < 3:
-        segments.append(f"Audience segment {len(segments) + 1}")
+def _build_model_provider(settings: Settings) -> ModelProvider:
+    if settings.model_provider == "fake":
+        logger.info("Using fake structured model provider for workflow generation")
+        return build_default_fake_provider()
 
-    personas = []
-    for index, segment in enumerate(segments, start=1):
-        personas.append(
-            {
-                "id": _slugify(f"persona_{index}_{segment}"),
-                "name": segment.title(),
-                "summary": (
-                    f"Placeholder persona synthesized from the brief audience: {segment}."
-                ),
-            }
+    missing_fields = [
+        field_name
+        for field_name, value in (
+            ("azure_openai_endpoint", settings.azure_openai_endpoint),
+            ("azure_openai_api_key", settings.azure_openai_api_key),
+            ("azure_openai_deployment", settings.azure_openai_deployment),
         )
-    return personas
+        if not value
+    ]
+    if missing_fields:
+        raise ModelProviderError(
+            "Azure OpenAI provider is selected but required settings are missing: "
+            + ", ".join(missing_fields)
+        )
+
+    return AzureOpenAIModelProvider(
+        endpoint=settings.azure_openai_endpoint or "",
+        api_key=settings.azure_openai_api_key or "",
+        api_version=settings.azure_openai_api_version,
+        deployment=settings.azure_openai_deployment or "",
+        default_timeout_seconds=settings.model_timeout_seconds,
+    )
 
 
-def _channel_stage(channel: str) -> str:
-    if channel == "google_search":
-        return "discovery"
-    if channel == "linkedin_sponsored_post":
-        return "consideration"
-    if channel == "email":
-        return "conversion"
-    return "nurture"
+def _strategy_from_payload(strategy_payload: dict[str, Any]) -> StrategyOutput:
+    return StrategyOutput.model_validate(strategy_payload)
 
 
-def _slugify(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+def _journey_from_payload(journey_payload: dict[str, Any]) -> JourneyOutput:
+    return JourneyOutput.model_validate(journey_payload)

@@ -107,6 +107,36 @@ class CampaignRepository:
         self.session.flush()
         return stage_output
 
+    def create_creative_variant(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        persona_id: str,
+        channel: str,
+        journey_stage: str,
+        primary_kpi: str,
+        status: str,
+        copy_json: dict,
+        revision_number: int = 0,
+        parent_variant_id: uuid.UUID | None = None,
+    ) -> CreativeVariant:
+        variant = CreativeVariant(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            persona_id=persona_id,
+            channel=channel,
+            journey_stage=journey_stage,
+            primary_kpi=primary_kpi,
+            revision_number=revision_number,
+            status=status,
+            copy_json=copy_json,
+            parent_variant_id=parent_variant_id,
+        )
+        self.session.add(variant)
+        self.session.flush()
+        return variant
+
     def list_creative_variants_for_run(self, run_id: uuid.UUID) -> list[CreativeVariant]:
         stmt = (
             select(CreativeVariant)

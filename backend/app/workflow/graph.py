@@ -37,7 +37,7 @@ class SequentialWorkflowGraph:
         return next_state
 
 
-def build_placeholder_graph(
+def build_workflow_graph(
     node_handlers: Mapping[str, WorkflowNode],
 ) -> SequentialWorkflowGraph | object:
     if not LANGGRAPH_AVAILABLE:
