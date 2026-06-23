@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,12 +61,15 @@ class CreativeVariantSummary(BaseModel):
 
     id: uuid.UUID
     run_id: uuid.UUID
+    client_variant_id: str
     persona_id: str
     channel: str
     journey_stage: str
     primary_kpi: str
     revision_number: int
     status: str
+    claims: list[str]
+    disclosure: str | None
     copy_payload: dict[str, Any] = Field(alias="copy")
     parent_variant_id: uuid.UUID | None
     created_at: datetime
@@ -137,4 +140,20 @@ class CampaignStateData(BaseModel):
 
 class CampaignStateEnvelope(BaseModel):
     data: CampaignStateData | None
+    error: ApiErrorBody | None = None
+
+
+class CampaignRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["live", "replay"] = "live"
+
+
+class CampaignRunData(BaseModel):
+    run_id: uuid.UUID
+    status: str
+
+
+class CampaignRunEnvelope(BaseModel):
+    data: CampaignRunData | None
     error: ApiErrorBody | None = None

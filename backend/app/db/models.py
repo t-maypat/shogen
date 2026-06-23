@@ -10,7 +10,6 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
-    Identity,
     Index,
     Integer,
     Numeric,
@@ -299,9 +298,9 @@ class EventLog(CreatedAtMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(
-        BigInteger,
-        Identity(always=True),
+        Integer().with_variant(BigInteger(), "postgresql"),
         primary_key=True,
+        autoincrement=True,
     )
     campaign_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("campaigns.id"),
