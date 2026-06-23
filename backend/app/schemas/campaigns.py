@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -137,4 +137,20 @@ class CampaignStateData(BaseModel):
 
 class CampaignStateEnvelope(BaseModel):
     data: CampaignStateData | None
+    error: ApiErrorBody | None = None
+
+
+class CampaignRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["live", "replay"] = "live"
+
+
+class CampaignRunData(BaseModel):
+    run_id: uuid.UUID
+    status: str
+
+
+class CampaignRunEnvelope(BaseModel):
+    data: CampaignRunData | None
     error: ApiErrorBody | None = None

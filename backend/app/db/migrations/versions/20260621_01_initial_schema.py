@@ -230,7 +230,12 @@ def upgrade() -> None:
 
     op.create_table(
         "event_log",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), nullable=False),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            nullable=False,
+            autoincrement=True,
+        ),
         sa.Column("campaign_id", sa.Uuid(), nullable=False),
         sa.Column("run_id", sa.Uuid(), nullable=True),
         sa.Column("event_type", sa.Text(), nullable=False),

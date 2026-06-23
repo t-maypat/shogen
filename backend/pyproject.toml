@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.16,<2.0",
     "fastapi>=0.116,<1.0",
+    "langgraph>=0.2,<1.0",
     "pydantic-settings>=2.10,<3.0",
     "psycopg[binary]>=3.2,<4.0",
     "python-json-logger>=2.0,<4.0",
