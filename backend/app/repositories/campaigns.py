@@ -153,6 +153,50 @@ class CampaignRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def create_policy_finding(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        variant_id: uuid.UUID,
+        source: str,
+        severity: str,
+        status: str,
+        finding_type: str,
+        evidence: str,
+        message: str,
+        rule_id: str | None = None,
+        suggestion: str | None = None,
+        metadata_json: dict | None = None,
+    ) -> PolicyFinding:
+        finding = PolicyFinding(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            variant_id=variant_id,
+            source=source,
+            rule_id=rule_id,
+            severity=severity,
+            status=status,
+            finding_type=finding_type,
+            evidence=evidence,
+            message=message,
+            suggestion=suggestion,
+            metadata_json=metadata_json,
+        )
+        self.session.add(finding)
+        self.session.flush()
+        return finding
+
+    def update_creative_variant_status(
+        self,
+        variant: CreativeVariant,
+        *,
+        status: str,
+    ) -> CreativeVariant:
+        variant.status = status
+        self.session.flush()
+        return variant
+
     def get_latest_approval_for_run(self, run_id: uuid.UUID) -> Approval | None:
         stmt = (
             select(Approval)

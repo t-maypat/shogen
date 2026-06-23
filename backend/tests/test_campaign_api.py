@@ -244,8 +244,21 @@ def test_run_campaign_persists_generated_workflow_outputs(
     assert all(
         variant["copy"] for variant in campaign_state["creative_variants"]
     )
-    assert len(campaign_state["events"]) >= 11
+    assert any(
+        variant["status"] == "blocked" for variant in campaign_state["creative_variants"]
+    )
+    assert any(
+        variant["status"] == "passed" for variant in campaign_state["creative_variants"]
+    )
+    assert any(
+        finding["rule_id"] == "FIN-CLAIM-001"
+        for finding in campaign_state["policy_findings"]
+    )
+    assert len(campaign_state["events"]) >= 12
     assert campaign_state["events"][0]["event_type"] == "workflow.started"
+    assert any(
+        event["event_type"] == "policy.failed" for event in campaign_state["events"]
+    )
     assert campaign_state["events"][-1]["stage"] == "approval_required"
     assert campaign_state["events"][-1]["payload"]["status"] == "approval_required"
 
@@ -273,6 +286,9 @@ def test_run_campaign_persists_generated_workflow_outputs(
     assert stage_outputs_by_name["journey"].model_name == "deterministic-journey-planner"
     assert stage_outputs_by_name["creative"].prompt_version == "creative.v1"
     assert stage_outputs_by_name["creative"].model_name == "fake-shogen-campaign-model"
+    assert stage_outputs_by_name["policy"].schema_version == "policy.det.v1"
+    assert stage_outputs_by_name["policy"].output_json["summary"]["blocking_findings"] >= 1
+    assert stage_outputs_by_name["approval_required"].output_json["ready_for_approval"] is False
 
 
 def test_campaign_events_endpoint_streams_sse_payloads(

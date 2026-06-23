@@ -153,6 +153,8 @@ def _fake_creative_response(request: ModelRequest[Any]) -> CreativeOutput:
         persona = personas_by_id[step.persona_id]
         disclosure = _disclosure_for_brief(brief, step.channel)
         claims = _claims_for_brief(brief, step.channel)
+        if _should_seed_risky_claim(brief=brief, step=step):
+            claims = [*claims, brief.risky_claims[0]]
         variant = CreativeVariantOut(
             client_variant_id=f"{step.persona_id}_{step.channel}",
             persona_id=step.persona_id,
@@ -227,6 +229,10 @@ def _build_channel_copy(
             f"{product_name} helps {persona.name.lower()} start with clear saving steps.",
             "Build confident habits with guidance made for first moves in finance.",
         ]
+        if _should_seed_risky_claim(brief=brief, step=step):
+            descriptions[0] = (
+                f"{product_name} helps {persona.name.lower()} pursue guaranteed returns."
+            )
         if disclosure:
             descriptions[1] = "Start carefully with transparent guidance and clear risk context."
         return GoogleSearchCopy(
@@ -352,6 +358,14 @@ def _disclosure_for_brief(brief: CampaignBrief, channel: str) -> str | None:
     if channel == "linkedin_sponsored_post":
         return "Investing involves risk. Review product details before acting."
     return "Investing involves risk. Returns are not guaranteed."
+
+
+def _should_seed_risky_claim(*, brief: CampaignBrief, step: JourneyStep) -> bool:
+    return (
+        bool(brief.risky_claims)
+        and step.persona_id == "p1"
+        and step.channel == "google_search"
+    )
 
 
 def _message_angle(persona_name: str, channel: str, objective: str) -> str:

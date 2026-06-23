@@ -1,0 +1,123 @@
+[
+  {
+    "rule_id": "FIN-CLAIM-001",
+    "version": "2026.06",
+    "name": "No guaranteed investment returns",
+    "channel": "all",
+    "severity": "blocking",
+    "type": "banned_phrase",
+    "pattern": "guaranteed returns",
+    "message": "Investment messaging must not imply guaranteed returns.",
+    "suggestion": "Use risk-aware language and include a disclosure that returns are not guaranteed."
+  },
+  {
+    "rule_id": "FIN-DISC-001",
+    "version": "2026.06",
+    "name": "Finance disclosure required",
+    "channel": "all",
+    "severity": "blocking",
+    "type": "finance_disclosure",
+    "required_terms": [
+      "Investing involves risk",
+      "not guaranteed"
+    ],
+    "message": "Investing-related creative must include a clear risk disclosure.",
+    "suggestion": "Add a disclosure such as 'Investing involves risk. Returns are not guaranteed.'"
+  },
+  {
+    "rule_id": "GOOG-LEN-001",
+    "version": "2026.06",
+    "name": "Google headline length",
+    "channel": "google_search",
+    "severity": "low",
+    "type": "channel_length",
+    "fields": [
+      "headlines"
+    ],
+    "max_length": 30,
+    "message": "Google Search headlines should stay within 30 characters for preview readability.",
+    "suggestion": "Shorten the headline while keeping the message intact."
+  },
+  {
+    "rule_id": "GOOG-LEN-002",
+    "version": "2026.06",
+    "name": "Google description length",
+    "channel": "google_search",
+    "severity": "low",
+    "type": "channel_length",
+    "fields": [
+      "descriptions"
+    ],
+    "max_length": 90,
+    "message": "Google Search descriptions should stay within 90 characters for preview readability.",
+    "suggestion": "Trim the description to the most important proof point."
+  },
+  {
+    "rule_id": "LI-LEN-001",
+    "version": "2026.06",
+    "name": "LinkedIn intro text length",
+    "channel": "linkedin_sponsored_post",
+    "severity": "low",
+    "type": "channel_length",
+    "fields": [
+      "intro_text"
+    ],
+    "max_length": 600,
+    "message": "LinkedIn intro text should stay concise enough for preview readability.",
+    "suggestion": "Tighten the opening sentence and keep the proof point."
+  },
+  {
+    "rule_id": "EMAIL-FIELD-001",
+    "version": "2026.06",
+    "name": "Email core fields required",
+    "channel": "email",
+    "severity": "blocking",
+    "type": "required_fields",
+    "fields": [
+      "subject",
+      "preheader",
+      "body"
+    ],
+    "message": "Email creative must include subject, preheader, and body copy.",
+    "suggestion": "Fill in the missing email fields before approval."
+  },
+  {
+    "rule_id": "COMMON-CTA-001",
+    "version": "2026.06",
+    "name": "CTA required",
+    "channel": "all",
+    "severity": "blocking",
+    "type": "required_fields",
+    "fields": [
+      "cta"
+    ],
+    "message": "Each creative variant needs a clear CTA.",
+    "suggestion": "Add a direct next step that matches the channel and KPI."
+  },
+  {
+    "rule_id": "COMMON-META-001",
+    "version": "2026.06",
+    "name": "Variant metadata required",
+    "channel": "all",
+    "severity": "blocking",
+    "type": "required_fields",
+    "fields": [
+      "persona_id",
+      "channel",
+      "journey_stage",
+      "primary_kpi"
+    ],
+    "message": "Each creative variant must include persona, channel, journey stage, and KPI mapping metadata.",
+    "suggestion": "Repair the variant metadata before continuing the workflow."
+  },
+  {
+    "rule_id": "COMMON-MAP-001",
+    "version": "2026.06",
+    "name": "Variant mapping must match the journey",
+    "channel": "all",
+    "severity": "blocking",
+    "type": "mapping_check",
+    "message": "Creative variants must map to a valid persona, channel, journey stage, and KPI from the generated journey.",
+    "suggestion": "Align the variant metadata with the generated strategy and journey outputs."
+  }
+]

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.provider import AzureOpenAIModelProvider, ModelProvider, ModelProviderError
 from app.core.config import Settings, get_settings
 from app.db.models import Campaign, WorkflowRun
+from app.policy import DeterministicPolicyEngine
 from app.repositories.campaigns import CampaignRepository
 from app.schemas.brief import CampaignBrief
 from app.schemas.creative import CreativeVariantOut
@@ -194,7 +195,13 @@ class CampaignWorkflowRunner:
                 run=run,
                 event_service=event_service,
                 stage_name="policy",
-                execute_stage=self._execute_policy_stage,
+                execute_stage=lambda state: self._execute_policy_stage(
+                    state=state,
+                    repository=CampaignRepository(session),
+                    event_service=event_service,
+                    campaign=campaign,
+                    run=run,
+                ),
             ),
             "approval_required": self._stage_node(
                 session=session,
@@ -339,24 +346,66 @@ class CampaignWorkflowRunner:
             creative_variants=creative.variants,
         )
 
-    def _execute_policy_stage(self, state: WorkflowState) -> StageExecutionResult:
-        risky_claims = state["brief"].get("risky_claims", [])
-        findings = [
-            {
-                "severity": "warning",
-                "message": f"Watch risky claim during later real policy checks: {claim}",
-            }
-            for claim in risky_claims
-        ]
-        return StageExecutionResult(
-            payload={
-                "summary": {
-                    "blocking_findings": 0,
-                    "warning_findings": len(findings),
+    def _execute_policy_stage(
+        self,
+        *,
+        state: WorkflowState,
+        repository: CampaignRepository,
+        event_service: EventService,
+        campaign: Campaign,
+        run: WorkflowRun,
+    ) -> StageExecutionResult:
+        brief = CampaignBrief.model_validate(state["brief"])
+        variants = repository.list_creative_variants_for_run(run.id)
+        evaluation = DeterministicPolicyEngine().evaluate(
+            brief=brief,
+            strategy=state.get("strategy"),
+            journey=state.get("journey"),
+            variants=variants,
+        )
+
+        results_by_variant_id = {
+            result.variant_id: result for result in evaluation.variant_results
+        }
+        for variant in variants:
+            variant_result = results_by_variant_id[variant.id]
+            repository.update_creative_variant_status(
+                variant,
+                status=variant_result.status,
+            )
+
+        for finding in evaluation.findings:
+            repository.create_policy_finding(
+                campaign_id=campaign.id,
+                run_id=run.id,
+                variant_id=finding.variant_id,
+                source=finding.source,
+                rule_id=finding.rule_id,
+                severity=finding.severity,
+                status="open",
+                finding_type=finding.finding_type,
+                evidence=finding.evidence,
+                message=finding.message,
+                suggestion=finding.suggestion,
+                metadata_json=finding.metadata,
+            )
+
+        if evaluation.summary["blocking_findings"] > 0:
+            event_service.record_workflow_event(
+                campaign_id=campaign.id,
+                run_id=run.id,
+                event_type="policy.failed",
+                stage="policy",
+                status="blocked",
+                display={
+                    "blocking_findings": evaluation.summary["blocking_findings"],
+                    "blocked_variants": evaluation.summary["blocked_variants"],
                 },
-                "findings": findings,
-            },
-            schema_version="policy.placeholder.v1",
+            )
+
+        return StageExecutionResult(
+            payload=evaluation.to_stage_payload(),
+            schema_version="policy.det.v1",
         )
 
     def _execute_approval_stage(self, state: WorkflowState) -> StageExecutionResult:
