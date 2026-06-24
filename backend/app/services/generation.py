@@ -21,6 +21,7 @@ from app.schemas.creative import (
     LinkedInCopy,
 )
 from app.schemas.journey import JourneyOutput, JourneyStage, JourneyStep
+from app.schemas.evaluation import Wave2AIOutput
 from app.schemas.review import CreativeRevisionOutput, SemanticReviewOutput
 from app.schemas.strategy import KPI, Persona, StrategyOutput
 
@@ -105,6 +106,7 @@ def build_default_fake_provider() -> FakeModelProvider:
     provider.register_handler("creative.generate", _fake_creative_response)
     provider.register_handler("semantic.review", _fake_semantic_review_response)
     provider.register_handler("creative.revise", _fake_creative_revision_response)
+    provider.register_handler("wave2.explain", _fake_wave2_response)
     return provider
 
 
@@ -266,6 +268,41 @@ def _fake_creative_revision_response(request: ModelRequest[Any]) -> CreativeRevi
             "claims": claims or ["Responsible financial guidance"],
             "disclosure": "Investing involves risk. Returns are not guaranteed.",
             "copy": copy_payload,
+        }
+    )
+
+
+def _fake_wave2_response(request: ModelRequest[Any]) -> Wave2AIOutput:
+    weak_variants = request.metadata["weak_variants"]
+    allocation_changes = request.metadata["allocation_changes"]
+    rewrites = []
+    for variant in weak_variants:
+        rewrites.append(
+            {
+                "variant_id": variant["variant_id"],
+                "client_variant_id": variant["client_variant_id"],
+                "rewritten_copy": _wave2_rewrite_copy(variant["copy"]),
+                "rationale": (
+                    "Rewritten to make the next step clearer while keeping fintech "
+                    "claims directional and policy-ready."
+                ),
+            }
+        )
+
+    increased = sum(1 for change in allocation_changes if change["delta_percent"] > 0)
+    reduced = sum(1 for change in allocation_changes if change["delta_percent"] < 0)
+    return Wave2AIOutput.model_validate(
+        {
+            "rationale": (
+                "Wave 2 shifts budget directionally toward variants with stronger "
+                "synthetic pre-flight scores and rewrites medium performers before "
+                "any production test."
+            ),
+            "allocation_summary": [
+                f"{increased} variants receive higher relative allocation.",
+                f"{reduced} variants are reduced pending copy improvements.",
+            ],
+            "rewrites": rewrites,
         }
     )
 
@@ -498,3 +535,25 @@ def _replace_guarantee_language(value: str) -> str:
         value,
         flags=re.IGNORECASE,
     )
+
+
+def _wave2_rewrite_copy(copy_payload: dict[str, Any]) -> dict[str, Any]:
+    rewritten = copy.deepcopy(copy_payload)
+    for field_name, field_value in list(rewritten.items()):
+        if isinstance(field_value, list):
+            rewritten[field_name] = [
+                _wave2_improve_text(item) if isinstance(item, str) else item
+                for item in field_value
+            ]
+        elif isinstance(field_value, str):
+            rewritten[field_name] = _wave2_improve_text(field_value)
+    if "cta" in rewritten:
+        rewritten["cta"] = "Start your guided plan"
+    return rewritten
+
+
+def _wave2_improve_text(value: str) -> str:
+    value = _replace_guarantee_language(value)
+    if len(value) > 160:
+        return value
+    return f"{value} Clear next step, measured expectations."

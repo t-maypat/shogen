@@ -294,6 +294,30 @@ class CampaignRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def create_evaluation_result(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        variant_id: uuid.UUID,
+        persona_id: str,
+        channel: str,
+        scores_json: dict,
+        total_score: float | int,
+    ) -> EvaluationResult:
+        result = EvaluationResult(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            variant_id=variant_id,
+            persona_id=persona_id,
+            channel=channel,
+            scores_json=scores_json,
+            total_score=total_score,
+        )
+        self.session.add(result)
+        self.session.flush()
+        return result
+
     def get_latest_wave_proposal_for_run(self, run_id: uuid.UUID) -> WaveProposal | None:
         stmt = (
             select(WaveProposal)
@@ -302,6 +326,24 @@ class CampaignRepository:
             .limit(1)
         )
         return self.session.scalar(stmt)
+
+    def create_wave_proposal(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        proposal_json: dict,
+        rationale_json: dict,
+    ) -> WaveProposal:
+        proposal = WaveProposal(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            proposal_json=proposal_json,
+            rationale_json=rationale_json,
+        )
+        self.session.add(proposal)
+        self.session.flush()
+        return proposal
 
     def create_event(
         self,

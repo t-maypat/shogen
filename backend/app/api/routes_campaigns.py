@@ -198,6 +198,8 @@ def approve_campaign(
                 created_at=result.approval_created_at,
             ),
             mock_deployment=result.mock_deployment,
+            evaluation=result.evaluation,
+            wave_proposal=result.wave_proposal,
             status=result.status,
         ),
         error=None,

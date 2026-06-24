@@ -10,6 +10,7 @@ STRATEGY_PROMPT_VERSION = "strategy.v1"
 CREATIVE_PROMPT_VERSION = "creative.v1"
 SEMANTIC_REVIEW_PROMPT_VERSION = "semantic_review.v1"
 CREATIVE_REVISION_PROMPT_VERSION = "creative_revision.v1"
+WAVE2_PROMPT_VERSION = "wave2.v1"
 JOURNEY_PLANNER_VERSION = "journey.det.v1"
 
 
@@ -103,4 +104,28 @@ def build_creative_revision_prompt(
         f"Journey:\n{journey_json}\n\n"
         f"Failed variant:\n{variant_json}\n\n"
         f"Findings to address:\n{findings_json}"
+    )
+
+
+def build_wave2_prompt(
+    *,
+    campaign_brief: CampaignBrief,
+    evaluation_results: list[dict],
+    allocation_changes: list[dict],
+    weak_variants: list[dict],
+) -> str:
+    brief_json = json.dumps(campaign_brief.model_dump(mode="json"), indent=2)
+    evaluation_json = json.dumps(evaluation_results, indent=2)
+    allocation_json = json.dumps(allocation_changes, indent=2)
+    weak_variants_json = json.dumps(weak_variants, indent=2)
+    return (
+        "You are Shogen's Wave 2 messaging assistant.\n"
+        "Explain deterministic allocation changes and rewrite only the weak creative "
+        "variants provided. Do not choose or alter allocation percentages. Keep all "
+        "language responsible for fintech, avoid attribution claims, and describe scores "
+        "as synthetic pre-flight and directional.\n\n"
+        f"Campaign brief:\n{brief_json}\n\n"
+        f"Evaluation results:\n{evaluation_json}\n\n"
+        f"Deterministic allocation changes:\n{allocation_json}\n\n"
+        f"Weak variants to rewrite:\n{weak_variants_json}"
     )

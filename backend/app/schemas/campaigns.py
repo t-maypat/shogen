@@ -173,6 +173,8 @@ class CampaignApprovalData(BaseModel):
     run_id: uuid.UUID
     approval: ApprovalSummary
     mock_deployment: dict[str, Any]
+    evaluation: dict[str, Any]
+    wave_proposal: dict[str, Any]
     status: str
 
 

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
-from app.db.models import CreativeVariant, PolicyFinding, StageOutput
+from app.db.models import CreativeVariant, EvaluationResult, PolicyFinding, StageOutput, WaveProposal
 from app.db.session import create_engine_for_url, get_db_session
 from app.main import create_app
 
@@ -348,7 +348,7 @@ def test_approve_campaign_generates_non_deployable_mock_payloads(
     approve_payload = approve_response.json()
     assert approve_payload["error"] is None
     assert approve_payload["data"]["run_id"] == run_id
-    assert approve_payload["data"]["status"] == "mock_deployed"
+    assert approve_payload["data"]["status"] == "completed"
     assert approve_payload["data"]["approval"]["status"] == "approved"
     assert approve_payload["data"]["approval"]["approved_by"] == "casey@example.com"
 
@@ -374,21 +374,63 @@ def test_approve_campaign_generates_non_deployable_mock_payloads(
         payload["payload"]["external_submission"] == "disabled"
         for payload in mock_deployment["payloads"]
     )
+    assert approve_payload["data"]["evaluation"]["summary"]["variant_count"] == 9
+    assert len(approve_payload["data"]["evaluation"]["results"]) == 9
+    assert approve_payload["data"]["wave_proposal"]["comparison"][
+        "wave2_total_allocation"
+    ] == 100
+    assert approve_payload["data"]["wave_proposal"]["comparison"][
+        "changed_allocations"
+    ] > 0
+    assert approve_payload["data"]["wave_proposal"]["rewrites"]
 
     campaign_state = client.get(f"/api/campaigns/{campaign_id}").json()["data"]
-    assert campaign_state["campaign"]["status"] == "mock_deployed"
-    assert campaign_state["latest_run"]["status"] == "mock_deployed"
-    assert campaign_state["latest_run"]["current_stage"] == "mock_deployment"
+    assert campaign_state["campaign"]["status"] == "completed"
+    assert campaign_state["latest_run"]["status"] == "completed"
+    assert campaign_state["latest_run"]["current_stage"] == "wave2"
     assert campaign_state["approval"]["approved_by"] == "casey@example.com"
     assert campaign_state["mock_deployment"]["summary"]["payload_count"] == 9
-    assert campaign_state["events"][-1]["stage"] == "mock_deployment"
-    assert campaign_state["events"][-1]["payload"]["status"] == "mock_deployed"
+    assert len(campaign_state["evaluation_results"]) == 9
+    assert all(
+        {
+            "message_fit",
+            "channel_fit",
+            "cta_clarity",
+            "policy_quality",
+            "journey_consistency",
+            "weighted_total",
+        }
+        <= set(result["scores"])
+        for result in campaign_state["evaluation_results"]
+    )
+    assert campaign_state["wave_proposal"]["proposal"]["comparison"][
+        "wave2_total_allocation"
+    ] == 100
+    assert any(
+        change["delta_percent"] != 0
+        for change in campaign_state["wave_proposal"]["proposal"][
+            "allocation_changes"
+        ]
+    )
+    assert campaign_state["wave_proposal"]["rationale"]["directional"] is True
+    assert campaign_state["events"][-1]["event_type"] == "workflow.completed"
+    assert campaign_state["events"][-1]["payload"]["status"] == "completed"
 
     with session_factory() as session:
         stage_outputs = (
             session.query(StageOutput)
             .where(StageOutput.run_id == uuid.UUID(run_id))
             .order_by(StageOutput.created_at.asc(), StageOutput.id.asc())
+            .all()
+        )
+        evaluation_results = (
+            session.query(EvaluationResult)
+            .where(EvaluationResult.run_id == uuid.UUID(run_id))
+            .all()
+        )
+        wave_proposals = (
+            session.query(WaveProposal)
+            .where(WaveProposal.run_id == uuid.UUID(run_id))
             .all()
         )
     stage_outputs_by_name = {
@@ -400,6 +442,10 @@ def test_approve_campaign_generates_non_deployable_mock_payloads(
     assert stage_outputs_by_name["mock_deployment"].output_json["summary"][
         "payload_count"
     ] == 9
+    assert stage_outputs_by_name["evaluation"].schema_version == "evaluation.synthetic.v1"
+    assert stage_outputs_by_name["wave2"].schema_version == "wave2.proposal.v1"
+    assert len(evaluation_results) == 9
+    assert len(wave_proposals) == 1
 
 
 def test_approve_campaign_fails_with_open_blocking_policy_finding(

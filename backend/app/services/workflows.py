@@ -24,6 +24,13 @@ from app.services.deployment import (
     MOCK_DEPLOYMENT_SCHEMA_VERSION,
     MockDeploymentService,
 )
+from app.services.evaluation import (
+    EVALUATION_MODEL_NAME,
+    EVALUATION_PROMPT_VERSION,
+    EVALUATION_SCHEMA_VERSION,
+    SyntheticEvaluationService,
+    Wave2OptimizationService,
+)
 from app.services.campaigns import CampaignNotFoundError
 from app.services.events import EventService
 from app.services.generation import CampaignGenerationService, build_default_fake_provider
@@ -108,6 +115,8 @@ class WorkflowApprovalResult:
     run_id: uuid.UUID
     status: str
     mock_deployment: dict[str, Any]
+    evaluation: dict[str, Any]
+    wave_proposal: dict[str, Any]
 
 
 class WorkflowService:
@@ -214,7 +223,7 @@ class WorkflowService:
         self.event_service.record_workflow_event(
             campaign_id=campaign.id,
             run_id=run.id,
-            event_type="approval.recorded",
+            event_type="approval.completed",
             stage="approval",
             status="approved",
             display={
@@ -251,17 +260,131 @@ class WorkflowService:
             output_json=deployment_payload,
         )
 
-        campaign.status = "mock_deployed"
-        run.status = "mock_deployed"
+        campaign.status = "running"
+        run.status = "running"
         run.current_stage = "mock_deployment"
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="mock_deployment.completed",
+            stage="mock_deployment",
+            status="completed",
+            display=deployment_payload["summary"],
+        )
+
+        stage_outputs = self.repository.list_stage_outputs_for_run(run.id)
+        journey_payload = _stage_payload(stage_outputs, "journey")
+        if journey_payload is None:
+            raise WorkflowApprovalNotReadyError(
+                campaign_id,
+                run_id=run.id,
+                status=run.status,
+                reason="Campaign has no journey output for evaluation",
+            )
+
+        campaign.status = "evaluating"
+        run.status = "running"
+        run.current_stage = "evaluation"
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="stage.started",
+            stage="evaluation",
+            status="running",
+        )
+        policy_findings = self.repository.list_policy_findings_for_run(run.id)
+        evaluation_result = SyntheticEvaluationService().evaluate(
+            campaign=campaign,
+            variants=active_variants,
+            journey=journey_payload,
+            policy_findings=policy_findings,
+        )
+        self.repository.create_stage_output(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            stage_name="evaluation",
+            schema_version=EVALUATION_SCHEMA_VERSION,
+            prompt_version=EVALUATION_PROMPT_VERSION,
+            model_name=EVALUATION_MODEL_NAME,
+            duration_ms=0,
+            output_json=evaluation_result.payload,
+        )
+        for result in evaluation_result.results:
+            self.repository.create_evaluation_result(
+                campaign_id=campaign.id,
+                run_id=run.id,
+                variant_id=uuid.UUID(result["variant_id"]),
+                persona_id=result["persona_id"],
+                channel=result["channel"],
+                scores_json=result["scores"],
+                total_score=result["scores"]["weighted_total"],
+            )
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="evaluation.completed",
+            stage="evaluation",
+            status="completed",
+            display=evaluation_result.payload["summary"],
+        )
+
+        run.current_stage = "wave2"
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="stage.started",
+            stage="wave2",
+            status="running",
+        )
+        settings = get_settings()
+        wave2_result = Wave2OptimizationService(
+            provider=_build_model_provider(settings),
+            timeout_seconds=settings.model_timeout_seconds,
+        ).optimize(
+            brief=CampaignBrief.model_validate(campaign.brief_json),
+            variants=active_variants,
+            journey=journey_payload,
+            evaluation_results=evaluation_result.results,
+        )
+        self.repository.create_wave_proposal(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            proposal_json=wave2_result.proposal,
+            rationale_json=wave2_result.rationale,
+        )
+        self.repository.create_stage_output(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            stage_name="wave2",
+            schema_version=wave2_result.metadata["schema_version"],
+            prompt_version=wave2_result.metadata["prompt_version"],
+            model_name=wave2_result.metadata["model_name"],
+            duration_ms=wave2_result.metadata["duration_ms"],
+            output_json={
+                "proposal": wave2_result.proposal,
+                "rationale": wave2_result.rationale,
+            },
+        )
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="wave2.completed",
+            stage="wave2",
+            status="completed",
+            display=wave2_result.proposal["comparison"],
+        )
+
+        campaign.status = "completed"
+        run.status = "completed"
+        run.current_stage = "wave2"
         run.completed_at = datetime.now(timezone.utc)
         self.event_service.record_workflow_event(
             campaign_id=campaign.id,
             run_id=run.id,
-            event_type="stage.completed",
-            stage="mock_deployment",
-            status="mock_deployed",
-            display=deployment_payload["summary"],
+            event_type="workflow.completed",
+            stage=None,
+            status="completed",
+            display={"final_stage": "wave2"},
         )
         self.repository.session.commit()
         self.repository.session.refresh(run)
@@ -276,6 +399,8 @@ class WorkflowService:
             run_id=run.id,
             status=run.status,
             mock_deployment=deployment_payload,
+            evaluation=evaluation_result.payload,
+            wave_proposal=wave2_result.proposal,
         )
 
 
@@ -997,3 +1122,10 @@ def _strategy_from_payload(strategy_payload: dict[str, Any]) -> StrategyOutput:
 
 def _journey_from_payload(journey_payload: dict[str, Any]) -> JourneyOutput:
     return JourneyOutput.model_validate(journey_payload)
+
+
+def _stage_payload(stage_outputs: list[Any], stage_name: str) -> dict[str, Any] | None:
+    for stage_output in stage_outputs:
+        if stage_output.stage_name == stage_name:
+            return stage_output.output_json
+    return None
