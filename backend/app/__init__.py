@@ -1,0 +1,1 @@
+"""Shogen backend application package."""
