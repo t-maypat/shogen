@@ -4,6 +4,7 @@ import asyncio
 import uuid
 
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import StreamingResponse
@@ -93,7 +94,7 @@ def run_campaign(
 ) -> CampaignRunEnvelope:
     workflow_service = WorkflowService(CampaignRepository(session))
     try:
-        run = workflow_service.start_workflow(
+        workflow_result = workflow_service.start_workflow(
             campaign_id=campaign_id,
             mode=payload.mode,
         )
@@ -115,14 +116,18 @@ def run_campaign(
             },
         ) from exc
 
-    start_campaign_workflow(
-        session_factory=_session_factory_from_session(session),
-        campaign_id=campaign_id,
-        run_id=run.id,
-        mode=payload.mode,
-    )
+    if workflow_result.started:
+        start_campaign_workflow(
+            session_factory=_session_factory_from_session(session),
+            campaign_id=campaign_id,
+            run_id=workflow_result.run.id,
+            mode=payload.mode,
+        )
     return CampaignRunEnvelope(
-        data=CampaignRunData(run_id=run.id, status=run.status),
+        data=CampaignRunData(
+            run_id=workflow_result.run.id,
+            status=workflow_result.run.status,
+        ),
         error=None,
     )
 
@@ -183,6 +188,22 @@ def approve_campaign(
                 "campaign_id": str(exc.campaign_id),
                 "run_id": str(exc.run_id) if exc.run_id is not None else None,
                 "status": exc.status,
+            },
+        ) from exc
+    except Exception as exc:
+        _mark_latest_run_failed(
+            session=session,
+            campaign_id=campaign_id,
+            exc=exc,
+        )
+        raise ApiException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            code="WORKFLOW_FAILED",
+            message="Campaign approval workflow failed",
+            details={
+                "campaign_id": str(campaign_id),
+                "message": str(exc),
+                "type": exc.__class__.__name__,
             },
         ) from exc
 
@@ -295,3 +316,37 @@ def _parse_last_event_id(last_event_id: str | None) -> int | None:
                 ]
             },
         ) from exc
+
+
+def _mark_latest_run_failed(
+    *,
+    session: Session,
+    campaign_id: uuid.UUID,
+    exc: Exception,
+) -> None:
+    session.rollback()
+    repository = CampaignRepository(session)
+    campaign = repository.get_campaign(campaign_id)
+    if campaign is None:
+        return
+
+    latest_run = repository.get_latest_run(campaign_id)
+    if latest_run is None:
+        return
+
+    latest_run.status = "failed"
+    latest_run.completed_at = datetime.now(timezone.utc)
+    latest_run.error_json = {
+        "message": str(exc),
+        "type": exc.__class__.__name__,
+    }
+    campaign.status = "failed"
+    EventService(repository).record_workflow_event(
+        campaign_id=campaign.id,
+        run_id=latest_run.id,
+        event_type="workflow.failed",
+        stage=latest_run.current_stage,
+        status="failed",
+        display=latest_run.error_json,
+    )
+    session.commit()

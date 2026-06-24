@@ -1,0 +1,26 @@
+{
+  "scenario": "fintech",
+  "name": "NestWise June Campaign",
+  "description": "Golden fintech demo brief for deterministic replay mode.",
+  "workflow_delay_seconds": 0.05,
+  "brief": {
+    "product_name": "NestWise",
+    "product_category": "Fintech savings and starter investing app",
+    "objective": "Drive qualified signups",
+    "audience_summary": "Young first-time investors, risk-conscious professionals, and small-business owners",
+    "budget_range": "$25k demo budget",
+    "duration_days": 30,
+    "brand_voice": ["clear", "trustworthy", "responsible"],
+    "required_claims": [
+      "Easy onboarding",
+      "Beginner-friendly saving tools"
+    ],
+    "risky_claims": ["guaranteed returns"],
+    "channels": [
+      "google_search",
+      "linkedin_sponsored_post",
+      "email"
+    ],
+    "notes": "Demo scenario should intentionally test policy-readiness."
+  }
+}

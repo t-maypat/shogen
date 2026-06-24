@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import get_settings
 from app.db.base import Base
 from app.db.models import CreativeVariant, EvaluationResult, PolicyFinding, StageOutput, WaveProposal
 from app.db.session import create_engine_for_url, get_db_session
@@ -321,6 +322,67 @@ def test_run_campaign_persists_generated_workflow_outputs(
     assert stage_outputs_by_name["approval_required"].output_json["ready_for_approval"] is True
 
 
+def test_run_campaign_is_idempotent_while_workflow_is_active(
+    client: TestClient,
+    valid_campaign_payload: dict,
+) -> None:
+    create_response = client.post("/api/campaigns", json=valid_campaign_payload)
+    campaign_id = create_response.json()["data"]["campaign_id"]
+
+    first_response = client.post(
+        f"/api/campaigns/{campaign_id}/run",
+        json={"mode": "live"},
+    )
+    second_response = client.post(
+        f"/api/campaigns/{campaign_id}/run",
+        json={"mode": "live"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.json()["data"]["run_id"] == first_response.json()["data"][
+        "run_id"
+    ]
+
+
+def test_demo_replay_uses_golden_fixture_without_external_model_config(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SHOGEN_MODEL_PROVIDER", "azure_openai")
+    monkeypatch.delenv("SHOGEN_AZURE_OPENAI_ENDPOINT", raising=False)
+    monkeypatch.delenv("SHOGEN_AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("SHOGEN_AZURE_OPENAI_DEPLOYMENT", raising=False)
+    get_settings.cache_clear()
+
+    replay_response = client.post("/api/demo/replay", json={"scenario": "fintech"})
+
+    assert replay_response.status_code == 201
+    replay_payload = replay_response.json()
+    assert replay_payload["error"] is None
+    assert replay_payload["data"]["status"] == "running"
+    assert replay_payload["data"]["replay_mode"] is True
+
+    campaign_id = replay_payload["data"]["campaign_id"]
+    campaign_state = _wait_for_campaign_status(
+        client,
+        campaign_id,
+        expected_status="approval_required",
+    )
+
+    assert campaign_state["campaign"]["name"] == "NestWise June Campaign"
+    assert campaign_state["campaign"]["brief"]["product_name"] == "NestWise"
+    assert campaign_state["latest_run"]["replay_mode"] is True
+    assert campaign_state["latest_run"]["status"] == "approval_required"
+    assert len(campaign_state["creative_variants"]) >= 9
+    assert any(
+        event["event_type"] == "stage.completed"
+        and event["stage"] == "approval_required"
+        for event in campaign_state["events"]
+    )
+    get_settings.cache_clear()
+
+
 def test_approve_campaign_generates_non_deployable_mock_payloads(
     client_with_session_factory: tuple[TestClient, sessionmaker[Session]],
     valid_campaign_payload: dict,
@@ -446,6 +508,42 @@ def test_approve_campaign_generates_non_deployable_mock_payloads(
     assert stage_outputs_by_name["wave2"].schema_version == "wave2.proposal.v1"
     assert len(evaluation_results) == 9
     assert len(wave_proposals) == 1
+
+
+def test_approve_campaign_is_idempotent_after_completion(
+    client: TestClient,
+    valid_campaign_payload: dict,
+) -> None:
+    create_response = client.post("/api/campaigns", json=valid_campaign_payload)
+    campaign_id = create_response.json()["data"]["campaign_id"]
+    client.post(
+        f"/api/campaigns/{campaign_id}/run",
+        json={"mode": "live"},
+    )
+    _wait_for_campaign_status(
+        client,
+        campaign_id,
+        expected_status="approval_required",
+    )
+
+    first_response = client.post(
+        f"/api/campaigns/{campaign_id}/approve",
+        json={"approved_by": "casey@example.com"},
+    )
+    second_response = client.post(
+        f"/api/campaigns/{campaign_id}/approve",
+        json={"approved_by": "casey@example.com"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    first_payload = first_response.json()["data"]
+    second_payload = second_response.json()["data"]
+    assert second_payload["approval"]["id"] == first_payload["approval"]["id"]
+    assert second_payload["run_id"] == first_payload["run_id"]
+    assert second_payload["status"] == "completed"
+    assert second_payload["mock_deployment"]["summary"]["payload_count"] == 9
+    assert second_payload["wave_proposal"]["comparison"]["wave2_total_allocation"] == 100
 
 
 def test_approve_campaign_fails_with_open_blocking_policy_finding(

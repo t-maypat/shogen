@@ -106,6 +106,12 @@ class WorkflowAlreadyApprovedError(Exception):
 
 
 @dataclass(slots=True)
+class WorkflowStartResult:
+    run: WorkflowRun
+    started: bool
+
+
+@dataclass(slots=True)
 class WorkflowApprovalResult:
     approval_id: uuid.UUID
     approval_status: str
@@ -129,14 +135,17 @@ class WorkflowService:
         *,
         campaign_id: uuid.UUID,
         mode: WorkflowMode,
-    ) -> WorkflowRun:
+    ) -> WorkflowStartResult:
         campaign = self.repository.get_campaign(campaign_id)
         if campaign is None:
             raise CampaignNotFoundError(campaign_id)
 
         latest_run = self.repository.get_latest_run(campaign_id)
-        if latest_run is not None and latest_run.status == "running":
-            raise WorkflowAlreadyRunningError(campaign_id, latest_run.id)
+        if latest_run is not None and latest_run.status in {
+            "running",
+            "approval_required",
+        }:
+            return WorkflowStartResult(run=latest_run, started=False)
 
         campaign.status = "running"
         run = self.repository.create_workflow_run(
@@ -155,7 +164,7 @@ class WorkflowService:
         )
         self.repository.session.commit()
         self.repository.session.refresh(run)
-        return run
+        return WorkflowStartResult(run=run, started=True)
 
     def approve_campaign(
         self,
@@ -174,6 +183,13 @@ class WorkflowService:
                 campaign_id,
                 reason="Campaign has no workflow run to approve",
             )
+        existing_approval = self.repository.get_latest_approval_for_run(run.id)
+        if existing_approval is not None and run.status == "completed":
+            return self._approval_result_from_existing(
+                campaign=campaign,
+                run=run,
+                approval=existing_approval,
+            )
         if run.status != "approval_required":
             raise WorkflowApprovalNotReadyError(
                 campaign_id,
@@ -183,7 +199,7 @@ class WorkflowService:
                     "Campaign must be waiting at approval_required before approval"
                 ),
             )
-        if self.repository.get_latest_approval_for_run(run.id) is not None:
+        if existing_approval is not None:
             raise WorkflowAlreadyApprovedError(campaign_id, run.id)
 
         open_blocking_findings = (
@@ -338,7 +354,7 @@ class WorkflowService:
         )
         settings = get_settings()
         wave2_result = Wave2OptimizationService(
-            provider=_build_model_provider(settings),
+            provider=_build_model_provider(settings, force_fake=run.replay_mode),
             timeout_seconds=settings.model_timeout_seconds,
         ).optimize(
             brief=CampaignBrief.model_validate(campaign.brief_json),
@@ -403,6 +419,36 @@ class WorkflowService:
             wave_proposal=wave2_result.proposal,
         )
 
+    def _approval_result_from_existing(
+        self,
+        *,
+        campaign: Campaign,
+        run: WorkflowRun,
+        approval: Any,
+    ) -> WorkflowApprovalResult:
+        stage_outputs = self.repository.list_stage_outputs_for_run(run.id)
+        deployment_payload = _stage_payload(stage_outputs, "mock_deployment") or {}
+        evaluation_payload = _stage_payload(stage_outputs, "evaluation") or {}
+        wave2_payload = _stage_payload(stage_outputs, "wave2") or {}
+        wave_proposal = self.repository.get_latest_wave_proposal_for_run(run.id)
+
+        proposal_payload = wave2_payload.get("proposal")
+        if proposal_payload is None and wave_proposal is not None:
+            proposal_payload = wave_proposal.proposal_json
+
+        return WorkflowApprovalResult(
+            approval_id=approval.id,
+            approval_status=approval.status,
+            approved_by=approval.approved_by,
+            approval_notes=approval.notes,
+            approval_created_at=approval.created_at,
+            run_id=run.id,
+            status=run.status,
+            mock_deployment=deployment_payload,
+            evaluation=evaluation_payload,
+            wave_proposal=proposal_payload or {},
+        )
+
 
 class CampaignWorkflowRunner:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
@@ -425,12 +471,13 @@ class CampaignWorkflowRunner:
                 return
 
             settings = get_settings()
+            provider = _build_model_provider(settings, force_fake=mode == "replay")
             generation_service = CampaignGenerationService(
-                provider=_build_model_provider(settings),
+                provider=provider,
                 timeout_seconds=settings.model_timeout_seconds,
             )
             review_service = SemanticReviewService(
-                provider=generation_service.provider,
+                provider=provider,
                 timeout_seconds=settings.model_timeout_seconds,
             )
             state: WorkflowState = {
@@ -1087,8 +1134,12 @@ def start_campaign_workflow(
     thread.start()
 
 
-def _build_model_provider(settings: Settings) -> ModelProvider:
-    if settings.model_provider == "fake":
+def _build_model_provider(
+    settings: Settings,
+    *,
+    force_fake: bool = False,
+) -> ModelProvider:
+    if force_fake or settings.model_provider == "fake":
         logger.info("Using fake structured model provider for workflow generation")
         return build_default_fake_provider()
 
