@@ -65,7 +65,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader activeTab={activeTab} status={status} onTabChange={setActiveTab} onOpenActivity={() => setActivityOpen(true)} />
+      <AppHeader activeTab={activeTab} status={status} onTabChange={setActiveTab} onOpenActivity={() => setActivityOpen(true)} onToast={toast} />
       <main className="workspace-main">
         {activeTab === "brief" && <BriefTab status={status} onRunReplay={runReplay} />}
         {activeTab === "journey" && <JourneyTab stages={stages} status={status} onOpenCreative={() => setActiveTab("creative")} />}

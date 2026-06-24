@@ -1,4 +1,12 @@
-import { Activity, Bell, ChevronDown, CircleHelp, Command, Radio, Search } from "lucide-react";
+import {
+  Activity,
+  Bell,
+  ChevronDown,
+  CircleHelp,
+  Command,
+  Radio,
+  Search,
+} from "lucide-react";
 import type { CampaignStatus, TabId } from "../types";
 
 const tabs: { id: TabId; label: string; number: string }[] = [
@@ -23,31 +31,72 @@ interface AppHeaderProps {
   status: CampaignStatus;
   onTabChange: (tab: TabId) => void;
   onOpenActivity: () => void;
+  onToast?: (message: string) => void;
 }
 
-export function AppHeader({ activeTab, status, onTabChange, onOpenActivity }: AppHeaderProps) {
+export function AppHeader({
+  activeTab,
+  status,
+  onTabChange,
+  onOpenActivity,
+  onToast,
+}: AppHeaderProps) {
   return (
     <>
       <header className="app-header">
         <div className="brand-lockup" aria-label="Shogun home">
-          <div className="brand-mark"><span>S</span></div>
+          <div className="brand-mark">
+            <span>S</span>
+          </div>
           <div>
             <div className="brand-name">SHOGUN</div>
             <div className="brand-subtitle">Campaign intelligence</div>
           </div>
         </div>
 
-        <button className="campaign-switcher" type="button">
+        <button
+          className="campaign-switcher"
+          type="button"
+          onClick={() => onToast?.("Campaign switcher opened")}
+        >
           <span className="campaign-monogram">NW</span>
-          <span><small>Active campaign</small>NestWise · Summer acquisition</span>
+          <span>
+            <small>Active campaign</small>NestWise · Summer acquisition
+          </span>
           <ChevronDown size={15} />
         </button>
 
         <div className="header-actions">
-          <button className="icon-button header-search" aria-label="Search"><Search size={18} /><kbd>⌘ K</kbd></button>
-          <button className="icon-button" aria-label="Help"><CircleHelp size={18} /></button>
-          <button className="icon-button" aria-label="Notifications"><Bell size={18} /><span className="notification-dot" /></button>
-          <button className="avatar-button" aria-label="Open profile">AM</button>
+          <button
+            className="icon-button header-search"
+            aria-label="Search"
+            onClick={() => onToast?.("Search dialog opened")}
+          >
+            <Search size={18} />
+            <kbd>⌘ K</kbd>
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Help"
+            onClick={() => onToast?.("Help menu opened")}
+          >
+            <CircleHelp size={18} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Notifications"
+            onClick={() => onToast?.("Notifications opened")}
+          >
+            <Bell size={18} />
+            <span className="notification-dot" />
+          </button>
+          <button
+            className="avatar-button"
+            aria-label="Open profile"
+            onClick={() => onToast?.("User profile opened")}
+          >
+            AM
+          </button>
         </div>
       </header>
 
@@ -61,17 +110,30 @@ export function AppHeader({ activeTab, status, onTabChange, onOpenActivity }: Ap
               onClick={() => onTabChange(tab.id)}
               aria-current={activeTab === tab.id ? "page" : undefined}
             >
-              <span>{tab.number}</span>{tab.label}
+              <span>{tab.number}</span>
+              {tab.label}
             </button>
           ))}
         </nav>
         <div className="workspace-meta">
-          <span className="mode-badge"><Radio size={13} /> Replay</span>
-          <button className={`status-pill status-${status}`} type="button" onClick={onOpenActivity}>
-            {status === "running" || status === "evaluating" ? <Activity size={13} className="spin-pulse" /> : <span className="status-dot" />}
+          <span className="mode-badge">
+            <Radio size={13} /> Replay
+          </span>
+          <button
+            className={`status-pill status-${status}`}
+            type="button"
+            onClick={onOpenActivity}
+          >
+            {status === "running" || status === "evaluating" ? (
+              <Activity size={13} className="spin-pulse" />
+            ) : (
+              <span className="status-dot" />
+            )}
             {statusLabels[status]}
           </button>
-          <span className="saved-label"><Command size={12} /> Saved just now</span>
+          <span className="saved-label">
+            <Command size={12} /> Saved just now
+          </span>
         </div>
       </div>
     </>
