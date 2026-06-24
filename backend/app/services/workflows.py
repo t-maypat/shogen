@@ -19,6 +19,11 @@ from app.schemas.brief import CampaignBrief
 from app.schemas.creative import CreativeVariantOut
 from app.schemas.journey import JourneyOutput
 from app.schemas.strategy import StrategyOutput
+from app.services.deployment import (
+    MOCK_DEPLOYMENT_MODEL_NAME,
+    MOCK_DEPLOYMENT_SCHEMA_VERSION,
+    MockDeploymentService,
+)
 from app.services.campaigns import CampaignNotFoundError
 from app.services.events import EventService
 from app.services.generation import CampaignGenerationService, build_default_fake_provider
@@ -50,6 +55,59 @@ class WorkflowAlreadyRunningError(Exception):
         self.campaign_id = campaign_id
         self.run_id = run_id
         super().__init__(f"Campaign {campaign_id} already has a running workflow")
+
+
+class WorkflowApprovalNotReadyError(Exception):
+    def __init__(
+        self,
+        campaign_id: uuid.UUID,
+        *,
+        reason: str,
+        run_id: uuid.UUID | None = None,
+        status: str | None = None,
+    ) -> None:
+        self.campaign_id = campaign_id
+        self.run_id = run_id
+        self.status = status
+        self.reason = reason
+        super().__init__(reason)
+
+
+class WorkflowApprovalBlockedError(Exception):
+    def __init__(
+        self,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        *,
+        blocking_findings: int,
+        deterministic_blocking_findings: int,
+    ) -> None:
+        self.campaign_id = campaign_id
+        self.run_id = run_id
+        self.blocking_findings = blocking_findings
+        self.deterministic_blocking_findings = deterministic_blocking_findings
+        super().__init__(
+            "Campaign cannot be approved while blocking policy findings remain"
+        )
+
+
+class WorkflowAlreadyApprovedError(Exception):
+    def __init__(self, campaign_id: uuid.UUID, run_id: uuid.UUID) -> None:
+        self.campaign_id = campaign_id
+        self.run_id = run_id
+        super().__init__(f"Campaign {campaign_id} has already been approved")
+
+
+@dataclass(slots=True)
+class WorkflowApprovalResult:
+    approval_id: uuid.UUID
+    approval_status: str
+    approved_by: str
+    approval_notes: str | None
+    approval_created_at: datetime
+    run_id: uuid.UUID
+    status: str
+    mock_deployment: dict[str, Any]
 
 
 class WorkflowService:
@@ -89,6 +147,136 @@ class WorkflowService:
         self.repository.session.commit()
         self.repository.session.refresh(run)
         return run
+
+    def approve_campaign(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        approved_by: str,
+        notes: str | None,
+    ) -> WorkflowApprovalResult:
+        campaign = self.repository.get_campaign(campaign_id)
+        if campaign is None:
+            raise CampaignNotFoundError(campaign_id)
+
+        run = self.repository.get_latest_run(campaign_id)
+        if run is None:
+            raise WorkflowApprovalNotReadyError(
+                campaign_id,
+                reason="Campaign has no workflow run to approve",
+            )
+        if run.status != "approval_required":
+            raise WorkflowApprovalNotReadyError(
+                campaign_id,
+                run_id=run.id,
+                status=run.status,
+                reason=(
+                    "Campaign must be waiting at approval_required before approval"
+                ),
+            )
+        if self.repository.get_latest_approval_for_run(run.id) is not None:
+            raise WorkflowAlreadyApprovedError(campaign_id, run.id)
+
+        open_blocking_findings = (
+            self.repository.list_open_blocking_policy_findings_for_run(run.id)
+        )
+        deterministic_blocking_findings = (
+            self.repository.list_open_blocking_policy_findings_for_run(
+                run.id,
+                source="deterministic",
+            )
+        )
+        if open_blocking_findings:
+            raise WorkflowApprovalBlockedError(
+                campaign_id,
+                run.id,
+                blocking_findings=len(open_blocking_findings),
+                deterministic_blocking_findings=len(deterministic_blocking_findings),
+            )
+
+        active_variants = self.repository.list_active_creative_variants_for_run(run.id)
+        if not active_variants:
+            raise WorkflowApprovalNotReadyError(
+                campaign_id,
+                run_id=run.id,
+                status=run.status,
+                reason="Campaign has no active creative variants to approve",
+            )
+
+        approval = self.repository.create_approval(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            approved_by=approved_by,
+            status="approved",
+            notes=notes,
+        )
+        self.repository.session.refresh(approval)
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="approval.recorded",
+            stage="approval",
+            status="approved",
+            display={
+                "approved_by": approval.approved_by,
+                "notes": bool(approval.notes),
+            },
+        )
+
+        campaign.status = "running"
+        run.status = "running"
+        run.current_stage = "mock_deployment"
+        run.completed_at = None
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="stage.started",
+            stage="mock_deployment",
+            status="running",
+        )
+
+        deployment_payload = MockDeploymentService().build_payload(
+            campaign=campaign,
+            approval=approval,
+            variants=active_variants,
+        )
+        self.repository.create_stage_output(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            stage_name="mock_deployment",
+            schema_version=MOCK_DEPLOYMENT_SCHEMA_VERSION,
+            prompt_version="mock_deployment.det.v1",
+            model_name=MOCK_DEPLOYMENT_MODEL_NAME,
+            duration_ms=0,
+            output_json=deployment_payload,
+        )
+
+        campaign.status = "mock_deployed"
+        run.status = "mock_deployed"
+        run.current_stage = "mock_deployment"
+        run.completed_at = datetime.now(timezone.utc)
+        self.event_service.record_workflow_event(
+            campaign_id=campaign.id,
+            run_id=run.id,
+            event_type="stage.completed",
+            stage="mock_deployment",
+            status="mock_deployed",
+            display=deployment_payload["summary"],
+        )
+        self.repository.session.commit()
+        self.repository.session.refresh(run)
+        self.repository.session.refresh(approval)
+
+        return WorkflowApprovalResult(
+            approval_id=approval.id,
+            approval_status=approval.status,
+            approved_by=approval.approved_by,
+            approval_notes=approval.notes,
+            approval_created_at=approval.created_at,
+            run_id=run.id,
+            status=run.status,
+            mock_deployment=deployment_payload,
+        )
 
 
 class CampaignWorkflowRunner:

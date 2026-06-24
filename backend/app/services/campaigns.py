@@ -76,6 +76,7 @@ class CampaignService:
             latest_run=self._serialize_run(latest_run),
             strategy=stage_payloads.get("strategy"),
             journey=stage_payloads.get("journey"),
+            mock_deployment=stage_payloads.get("mock_deployment"),
             creative_variants=[
                 self._serialize_creative_variant(variant) for variant in creative_variants
             ],

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
-from app.db.models import StageOutput
+from app.db.models import CreativeVariant, PolicyFinding, StageOutput
 from app.db.session import create_engine_for_url, get_db_session
 from app.main import create_app
 
@@ -139,6 +139,7 @@ def test_get_campaign_returns_full_campaign_state(
     assert payload["data"]["latest_run"] is None
     assert payload["data"]["strategy"] is None
     assert payload["data"]["journey"] is None
+    assert payload["data"]["mock_deployment"] is None
     assert payload["data"]["creative_variants"] == []
     assert payload["data"]["policy_findings"] == []
     assert payload["data"]["approval"] is None
@@ -318,6 +319,149 @@ def test_run_campaign_persists_generated_workflow_outputs(
     assert stage_outputs_by_name["policy"].output_json["summary"]["revision_count"] == 1
     assert stage_outputs_by_name["policy"].output_json["summary"]["ready_for_approval"] is True
     assert stage_outputs_by_name["approval_required"].output_json["ready_for_approval"] is True
+
+
+def test_approve_campaign_generates_non_deployable_mock_payloads(
+    client_with_session_factory: tuple[TestClient, sessionmaker[Session]],
+    valid_campaign_payload: dict,
+) -> None:
+    client, session_factory = client_with_session_factory
+    create_response = client.post("/api/campaigns", json=valid_campaign_payload)
+    campaign_id = create_response.json()["data"]["campaign_id"]
+    run_response = client.post(
+        f"/api/campaigns/{campaign_id}/run",
+        json={"mode": "live"},
+    )
+    run_id = run_response.json()["data"]["run_id"]
+    _wait_for_campaign_status(
+        client,
+        campaign_id,
+        expected_status="approval_required",
+    )
+
+    approve_response = client.post(
+        f"/api/campaigns/{campaign_id}/approve",
+        json={"approved_by": "casey@example.com", "notes": "Ready for mock deploy."},
+    )
+
+    assert approve_response.status_code == 200
+    approve_payload = approve_response.json()
+    assert approve_payload["error"] is None
+    assert approve_payload["data"]["run_id"] == run_id
+    assert approve_payload["data"]["status"] == "mock_deployed"
+    assert approve_payload["data"]["approval"]["status"] == "approved"
+    assert approve_payload["data"]["approval"]["approved_by"] == "casey@example.com"
+
+    mock_deployment = approve_payload["data"]["mock_deployment"]
+    assert mock_deployment["deployment_mode"] == "mock"
+    assert mock_deployment["deployable"] is False
+    assert mock_deployment["mock_only"] is True
+    assert "No external" in mock_deployment["non_deployable_label"]
+    assert mock_deployment["summary"]["payload_count"] == 9
+    assert mock_deployment["summary"]["channels"] == [
+        "email",
+        "google_search",
+        "linkedin_sponsored_post",
+    ]
+    assert {
+        payload["platform"] for payload in mock_deployment["payloads"]
+    } == {"email_service", "google_ads", "linkedin_ads"}
+    assert all(
+        payload["deployable"] is False and payload["mock_only"] is True
+        for payload in mock_deployment["payloads"]
+    )
+    assert all(
+        payload["payload"]["external_submission"] == "disabled"
+        for payload in mock_deployment["payloads"]
+    )
+
+    campaign_state = client.get(f"/api/campaigns/{campaign_id}").json()["data"]
+    assert campaign_state["campaign"]["status"] == "mock_deployed"
+    assert campaign_state["latest_run"]["status"] == "mock_deployed"
+    assert campaign_state["latest_run"]["current_stage"] == "mock_deployment"
+    assert campaign_state["approval"]["approved_by"] == "casey@example.com"
+    assert campaign_state["mock_deployment"]["summary"]["payload_count"] == 9
+    assert campaign_state["events"][-1]["stage"] == "mock_deployment"
+    assert campaign_state["events"][-1]["payload"]["status"] == "mock_deployed"
+
+    with session_factory() as session:
+        stage_outputs = (
+            session.query(StageOutput)
+            .where(StageOutput.run_id == uuid.UUID(run_id))
+            .order_by(StageOutput.created_at.asc(), StageOutput.id.asc())
+            .all()
+        )
+    stage_outputs_by_name = {
+        stage_output.stage_name: stage_output for stage_output in stage_outputs
+    }
+    assert stage_outputs_by_name["mock_deployment"].schema_version == (
+        "mock_deployment.v1"
+    )
+    assert stage_outputs_by_name["mock_deployment"].output_json["summary"][
+        "payload_count"
+    ] == 9
+
+
+def test_approve_campaign_fails_with_open_blocking_policy_finding(
+    client_with_session_factory: tuple[TestClient, sessionmaker[Session]],
+    valid_campaign_payload: dict,
+) -> None:
+    client, session_factory = client_with_session_factory
+    create_response = client.post("/api/campaigns", json=valid_campaign_payload)
+    campaign_id = create_response.json()["data"]["campaign_id"]
+    run_response = client.post(
+        f"/api/campaigns/{campaign_id}/run",
+        json={"mode": "live"},
+    )
+    run_id = uuid.UUID(run_response.json()["data"]["run_id"])
+    _wait_for_campaign_status(
+        client,
+        campaign_id,
+        expected_status="approval_required",
+    )
+
+    with session_factory() as session:
+        variant = (
+            session.query(CreativeVariant)
+            .where(
+                CreativeVariant.run_id == run_id,
+                CreativeVariant.status != "revised",
+            )
+            .first()
+        )
+        assert variant is not None
+        session.add(
+            PolicyFinding(
+                campaign_id=uuid.UUID(campaign_id),
+                run_id=run_id,
+                variant_id=variant.id,
+                source="deterministic",
+                rule_id="TEST-BLOCK",
+                severity="blocking",
+                status="open",
+                finding_type="test_block",
+                evidence="forced blocking finding",
+                message="Approval must not pass while this is open.",
+            )
+        )
+        session.commit()
+
+    approve_response = client.post(
+        f"/api/campaigns/{campaign_id}/approve",
+        json={"approved_by": "casey@example.com"},
+    )
+
+    assert approve_response.status_code == 409
+    payload = approve_response.json()
+    assert payload["data"] is None
+    assert payload["error"]["code"] == "APPROVAL_BLOCKED"
+    assert payload["error"]["details"]["blocking_findings"] == 1
+    assert payload["error"]["details"]["deterministic_blocking_findings"] == 1
+
+    campaign_state = client.get(f"/api/campaigns/{campaign_id}").json()["data"]
+    assert campaign_state["latest_run"]["status"] == "approval_required"
+    assert campaign_state["approval"] is None
+    assert campaign_state["mock_deployment"] is None
 
 
 def test_campaign_events_endpoint_streams_sse_payloads(

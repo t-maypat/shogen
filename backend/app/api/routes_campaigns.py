@@ -14,6 +14,10 @@ from app.api.errors import ApiException
 from app.db.session import get_db_session
 from app.repositories.campaigns import CampaignRepository
 from app.schemas.campaigns import (
+    ApprovalSummary,
+    CampaignApprovalData,
+    CampaignApprovalEnvelope,
+    CampaignApprovalRequest,
     CampaignCreateData,
     CampaignCreateEnvelope,
     CampaignCreateRequest,
@@ -25,7 +29,10 @@ from app.schemas.campaigns import (
 from app.services.campaigns import CampaignNotFoundError, CampaignService
 from app.services.events import EventService
 from app.services.workflows import (
+    WorkflowAlreadyApprovedError,
     WorkflowAlreadyRunningError,
+    WorkflowApprovalBlockedError,
+    WorkflowApprovalNotReadyError,
     WorkflowService,
     start_campaign_workflow,
 )
@@ -116,6 +123,83 @@ def run_campaign(
     )
     return CampaignRunEnvelope(
         data=CampaignRunData(run_id=run.id, status=run.status),
+        error=None,
+    )
+
+
+@router.post(
+    "/{campaign_id}/approve",
+    response_model=CampaignApprovalEnvelope,
+)
+def approve_campaign(
+    campaign_id: uuid.UUID,
+    payload: CampaignApprovalRequest,
+    session: Session = Depends(get_db_session),
+) -> CampaignApprovalEnvelope:
+    workflow_service = WorkflowService(CampaignRepository(session))
+    try:
+        result = workflow_service.approve_campaign(
+            campaign_id=campaign_id,
+            approved_by=payload.approved_by,
+            notes=payload.notes,
+        )
+    except CampaignNotFoundError as exc:
+        raise ApiException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="NOT_FOUND",
+            message=str(exc),
+            details={"campaign_id": str(exc.campaign_id)},
+        ) from exc
+    except WorkflowApprovalBlockedError as exc:
+        raise ApiException(
+            status_code=status.HTTP_409_CONFLICT,
+            code="APPROVAL_BLOCKED",
+            message=str(exc),
+            details={
+                "campaign_id": str(exc.campaign_id),
+                "run_id": str(exc.run_id),
+                "blocking_findings": exc.blocking_findings,
+                "deterministic_blocking_findings": (
+                    exc.deterministic_blocking_findings
+                ),
+            },
+        ) from exc
+    except WorkflowAlreadyApprovedError as exc:
+        raise ApiException(
+            status_code=status.HTTP_409_CONFLICT,
+            code="ALREADY_APPROVED",
+            message=str(exc),
+            details={
+                "campaign_id": str(exc.campaign_id),
+                "run_id": str(exc.run_id),
+            },
+        ) from exc
+    except WorkflowApprovalNotReadyError as exc:
+        raise ApiException(
+            status_code=status.HTTP_409_CONFLICT,
+            code="APPROVAL_NOT_READY",
+            message=str(exc),
+            details={
+                "campaign_id": str(exc.campaign_id),
+                "run_id": str(exc.run_id) if exc.run_id is not None else None,
+                "status": exc.status,
+            },
+        ) from exc
+
+    return CampaignApprovalEnvelope(
+        data=CampaignApprovalData(
+            campaign_id=campaign_id,
+            run_id=result.run_id,
+            approval=ApprovalSummary(
+                id=result.approval_id,
+                approved_by=result.approved_by,
+                status=result.approval_status,
+                notes=result.approval_notes,
+                created_at=result.approval_created_at,
+            ),
+            mock_deployment=result.mock_deployment,
+            status=result.status,
+        ),
         error=None,
     )
 

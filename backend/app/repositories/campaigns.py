@@ -167,6 +167,22 @@ class CampaignRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def list_open_blocking_policy_findings_for_run(
+        self,
+        run_id: uuid.UUID,
+        *,
+        source: str | None = None,
+    ) -> list[PolicyFinding]:
+        stmt = select(PolicyFinding).where(
+            PolicyFinding.run_id == run_id,
+            PolicyFinding.status == "open",
+            PolicyFinding.severity == "blocking",
+        )
+        if source is not None:
+            stmt = stmt.where(PolicyFinding.source == source)
+        stmt = stmt.order_by(PolicyFinding.created_at.asc(), PolicyFinding.id.asc())
+        return list(self.session.scalars(stmt))
+
     def create_policy_finding(
         self,
         *,
@@ -249,6 +265,26 @@ class CampaignRepository:
             .limit(1)
         )
         return self.session.scalar(stmt)
+
+    def create_approval(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        approved_by: str,
+        status: str,
+        notes: str | None = None,
+    ) -> Approval:
+        approval = Approval(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            approved_by=approved_by,
+            status=status,
+            notes=notes,
+        )
+        self.session.add(approval)
+        self.session.flush()
+        return approval
 
     def list_evaluation_results_for_run(self, run_id: uuid.UUID) -> list[EvaluationResult]:
         stmt = (

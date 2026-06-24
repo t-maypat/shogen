@@ -131,6 +131,7 @@ class CampaignStateData(BaseModel):
     latest_run: WorkflowRunSummary | None
     strategy: dict[str, Any] | None
     journey: dict[str, Any] | None
+    mock_deployment: dict[str, Any] | None
     creative_variants: list[CreativeVariantSummary]
     policy_findings: list[PolicyFindingSummary]
     approval: ApprovalSummary | None
@@ -157,4 +158,24 @@ class CampaignRunData(BaseModel):
 
 class CampaignRunEnvelope(BaseModel):
     data: CampaignRunData | None
+    error: ApiErrorBody | None = None
+
+
+class CampaignApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved_by: NonEmptyStr = "demo_marketer"
+    notes: str | None = None
+
+
+class CampaignApprovalData(BaseModel):
+    campaign_id: uuid.UUID
+    run_id: uuid.UUID
+    approval: ApprovalSummary
+    mock_deployment: dict[str, Any]
+    status: str
+
+
+class CampaignApprovalEnvelope(BaseModel):
+    data: CampaignApprovalData | None
     error: ApiErrorBody | None = None
