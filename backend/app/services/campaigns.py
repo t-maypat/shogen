@@ -155,6 +155,7 @@ class CampaignService:
     ) -> PolicyFindingSummary:
         return PolicyFindingSummary(
             id=finding.id,
+            variant_id=finding.variant_id,
             source=finding.source,
             rule_id=finding.rule_id,
             severity=finding.severity,

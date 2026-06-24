@@ -78,6 +78,7 @@ class CreativeVariantSummary(BaseModel):
 
 class PolicyFindingSummary(BaseModel):
     id: uuid.UUID
+    variant_id: uuid.UUID
     source: str
     rule_id: str | None
     severity: str

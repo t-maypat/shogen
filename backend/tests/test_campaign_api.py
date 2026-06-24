@@ -223,10 +223,22 @@ def test_run_campaign_persists_generated_workflow_outputs(
     assert (
         sum(step["allocation_percent"] for step in campaign_state["journey"]["steps"]) == 100
     )
-    assert len(campaign_state["creative_variants"]) == 9
+    assert len(campaign_state["creative_variants"]) == 13
+    active_variants = [
+        variant
+        for variant in campaign_state["creative_variants"]
+        if variant["status"] != "revised"
+    ]
+    revised_variants = [
+        variant
+        for variant in campaign_state["creative_variants"]
+        if variant["status"] == "revised"
+    ]
+    assert len(active_variants) == 9
+    assert len(revised_variants) == 4
     assert {
         (variant["persona_id"], variant["channel"])
-        for variant in campaign_state["creative_variants"]
+        for variant in active_variants
     } == {
         ("p1", "google_search"),
         ("p1", "linkedin_sponsored_post"),
@@ -239,25 +251,39 @@ def test_run_campaign_persists_generated_workflow_outputs(
         ("p3", "email"),
     }
     assert all(
-        variant["claims"] for variant in campaign_state["creative_variants"]
+        variant["claims"] for variant in active_variants
     )
     assert all(
-        variant["copy"] for variant in campaign_state["creative_variants"]
+        variant["copy"] for variant in active_variants
     )
-    assert any(
-        variant["status"] == "blocked" for variant in campaign_state["creative_variants"]
+    assert all(
+        variant["revision_number"] <= 2
+        for variant in campaign_state["creative_variants"]
     )
+    assert all(
+        variant["parent_variant_id"] is not None
+        for variant in active_variants
+        if variant["revision_number"] > 0
+    )
+    assert not any(variant["status"] == "blocked" for variant in active_variants)
+    assert any(variant["status"] == "passed" for variant in active_variants)
     assert any(
-        variant["status"] == "passed" for variant in campaign_state["creative_variants"]
+        finding["source"] == "semantic"
+        for finding in campaign_state["policy_findings"]
     )
     assert any(
         finding["rule_id"] == "FIN-CLAIM-001"
         for finding in campaign_state["policy_findings"]
     )
+    assert not any(
+        finding["severity"] == "blocking" and finding["status"] == "open"
+        for finding in campaign_state["policy_findings"]
+    )
     assert len(campaign_state["events"]) >= 12
     assert campaign_state["events"][0]["event_type"] == "workflow.started"
     assert any(
-        event["event_type"] == "policy.failed" for event in campaign_state["events"]
+        event["event_type"] == "policy.revision_created"
+        for event in campaign_state["events"]
     )
     assert campaign_state["events"][-1]["stage"] == "approval_required"
     assert campaign_state["events"][-1]["payload"]["status"] == "approval_required"
@@ -286,9 +312,12 @@ def test_run_campaign_persists_generated_workflow_outputs(
     assert stage_outputs_by_name["journey"].model_name == "deterministic-journey-planner"
     assert stage_outputs_by_name["creative"].prompt_version == "creative.v1"
     assert stage_outputs_by_name["creative"].model_name == "fake-shogen-campaign-model"
-    assert stage_outputs_by_name["policy"].schema_version == "policy.det.v1"
-    assert stage_outputs_by_name["policy"].output_json["summary"]["blocking_findings"] >= 1
-    assert stage_outputs_by_name["approval_required"].output_json["ready_for_approval"] is False
+    assert stage_outputs_by_name["policy"].schema_version == "policy.review.v1"
+    assert stage_outputs_by_name["policy"].prompt_version == "semantic_review.v1"
+    assert stage_outputs_by_name["policy"].output_json["summary"]["blocking_findings"] == 0
+    assert stage_outputs_by_name["policy"].output_json["summary"]["revision_count"] == 1
+    assert stage_outputs_by_name["policy"].output_json["summary"]["ready_for_approval"] is True
+    assert stage_outputs_by_name["approval_required"].output_json["ready_for_approval"] is True
 
 
 def test_campaign_events_endpoint_streams_sse_payloads(

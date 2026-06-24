@@ -145,6 +145,20 @@ class CampaignRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def list_active_creative_variants_for_run(
+        self,
+        run_id: uuid.UUID,
+    ) -> list[CreativeVariant]:
+        stmt = (
+            select(CreativeVariant)
+            .where(
+                CreativeVariant.run_id == run_id,
+                CreativeVariant.status != "revised",
+            )
+            .order_by(CreativeVariant.created_at.asc(), CreativeVariant.id.asc())
+        )
+        return list(self.session.scalars(stmt))
+
     def list_policy_findings_for_run(self, run_id: uuid.UUID) -> list[PolicyFinding]:
         stmt = (
             select(PolicyFinding)
@@ -186,6 +200,36 @@ class CampaignRepository:
         self.session.add(finding)
         self.session.flush()
         return finding
+
+    def resolve_open_policy_findings_for_variants(
+        self,
+        variant_ids: list[uuid.UUID],
+        *,
+        resolved_at: datetime,
+        reason: str,
+        resolved_by_variant_id: uuid.UUID | None = None,
+    ) -> list[PolicyFinding]:
+        if not variant_ids:
+            return []
+
+        stmt = select(PolicyFinding).where(
+            PolicyFinding.variant_id.in_(variant_ids),
+            PolicyFinding.status == "open",
+        )
+        findings = list(self.session.scalars(stmt))
+        for finding in findings:
+            finding.status = "resolved"
+            finding.resolved_at = resolved_at
+            metadata = dict(finding.metadata_json or {})
+            metadata["resolution"] = {
+                "reason": reason,
+                "resolved_by_variant_id": (
+                    str(resolved_by_variant_id) if resolved_by_variant_id else None
+                ),
+            }
+            finding.metadata_json = metadata
+        self.session.flush()
+        return findings
 
     def update_creative_variant_status(
         self,
