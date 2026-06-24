@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any
 
@@ -20,6 +21,8 @@ from app.schemas.creative import (
     LinkedInCopy,
 )
 from app.schemas.journey import JourneyOutput, JourneyStage, JourneyStep
+from app.schemas.evaluation import Wave2AIOutput
+from app.schemas.review import CreativeRevisionOutput, SemanticReviewOutput
 from app.schemas.strategy import KPI, Persona, StrategyOutput
 
 JOURNEY_MODEL_NAME = "deterministic-journey-planner"
@@ -101,6 +104,9 @@ def build_default_fake_provider() -> FakeModelProvider:
     provider = FakeModelProvider(model_name="fake-shogen-campaign-model")
     provider.register_handler("strategy.generate", _fake_strategy_response)
     provider.register_handler("creative.generate", _fake_creative_response)
+    provider.register_handler("semantic.review", _fake_semantic_review_response)
+    provider.register_handler("creative.revise", _fake_creative_revision_response)
+    provider.register_handler("wave2.explain", _fake_wave2_response)
     return provider
 
 
@@ -173,6 +179,132 @@ def _fake_creative_response(request: ModelRequest[Any]) -> CreativeOutput:
         variants.append(variant)
 
     return CreativeOutput(variants=variants)
+
+
+def _fake_semantic_review_response(request: ModelRequest[Any]) -> SemanticReviewOutput:
+    brief = CampaignBrief.model_validate(request.metadata["brief"])
+    variants = request.metadata["variants"]
+    finance_related = "fintech" in brief.product_category.casefold()
+
+    reviews: list[dict[str, Any]] = []
+    for variant in variants:
+        findings: list[dict[str, Any]] = []
+        text_fields = _variant_text_fields(variant)
+        for field_name, field_value in text_fields:
+            if "guaranteed returns" not in field_value.casefold():
+                continue
+            findings.append(
+                {
+                    "finding_type": "unsupported_claim",
+                    "severity": "blocking",
+                    "evidence": f"{field_name}: {field_value}",
+                    "message": (
+                        "The copy makes an unsupported investment-performance claim."
+                    ),
+                    "suggestion": (
+                        "Replace guarantee language with risk-aware wording that can "
+                        "be substantiated."
+                    ),
+                }
+            )
+
+        disclosure = variant.get("disclosure")
+        if finance_related and (
+            not isinstance(disclosure, str)
+            or "investing involves risk" not in disclosure.casefold()
+            or "not guaranteed" not in disclosure.casefold()
+        ):
+            findings.append(
+                {
+                    "finding_type": "sensitivity",
+                    "severity": "blocking",
+                    "evidence": f"disclosure: {disclosure or '<missing>'}",
+                    "message": (
+                        "Finance messaging needs risk context before approval."
+                    ),
+                    "suggestion": (
+                        "Use a concise disclosure such as 'Investing involves risk. "
+                        "Returns are not guaranteed.'"
+                    ),
+                }
+            )
+
+        status = "passed"
+        if any(finding["severity"] == "blocking" for finding in findings):
+            status = "blocked"
+        elif findings:
+            status = "warning"
+        reviews.append(
+            {
+                "client_variant_id": variant["client_variant_id"],
+                "status": status,
+                "findings": findings,
+            }
+        )
+
+    return SemanticReviewOutput.model_validate({"reviews": reviews})
+
+
+def _fake_creative_revision_response(request: ModelRequest[Any]) -> CreativeRevisionOutput:
+    variant = request.metadata["variant"]
+    copy_payload = copy.deepcopy(variant["copy"])
+    claims = [
+        _replace_guarantee_language(claim)
+        for claim in variant.get("claims", [])
+        if isinstance(claim, str)
+    ]
+
+    for field_name, field_value in list(copy_payload.items()):
+        if isinstance(field_value, list):
+            copy_payload[field_name] = [
+                _replace_guarantee_language(item) if isinstance(item, str) else item
+                for item in field_value
+            ]
+        elif isinstance(field_value, str):
+            copy_payload[field_name] = _replace_guarantee_language(field_value)
+
+    return CreativeRevisionOutput.model_validate(
+        {
+            "claims": claims or ["Responsible financial guidance"],
+            "disclosure": "Investing involves risk. Returns are not guaranteed.",
+            "copy": copy_payload,
+        }
+    )
+
+
+def _fake_wave2_response(request: ModelRequest[Any]) -> Wave2AIOutput:
+    weak_variants = request.metadata["weak_variants"]
+    allocation_changes = request.metadata["allocation_changes"]
+    rewrites = []
+    for variant in weak_variants:
+        rewrites.append(
+            {
+                "variant_id": variant["variant_id"],
+                "client_variant_id": variant["client_variant_id"],
+                "rewritten_copy": _wave2_rewrite_copy(variant["copy"]),
+                "rationale": (
+                    "Rewritten to make the next step clearer while keeping fintech "
+                    "claims directional and policy-ready."
+                ),
+            }
+        )
+
+    increased = sum(1 for change in allocation_changes if change["delta_percent"] > 0)
+    reduced = sum(1 for change in allocation_changes if change["delta_percent"] < 0)
+    return Wave2AIOutput.model_validate(
+        {
+            "rationale": (
+                "Wave 2 shifts budget directionally toward variants with stronger "
+                "synthetic pre-flight scores and rewrites medium performers before "
+                "any production test."
+            ),
+            "allocation_summary": [
+                f"{increased} variants receive higher relative allocation.",
+                f"{reduced} variants are reduced pending copy improvements.",
+            ],
+            "rewrites": rewrites,
+        }
+    )
 
 
 def _build_journey_steps(
@@ -374,3 +506,54 @@ def _message_angle(persona_name: str, channel: str, objective: str) -> str:
         f"Connect {persona_name} to {objective.lower()} through a {channel_label} "
         "message that stays clear and responsible."
     )
+
+
+def _variant_text_fields(variant: dict[str, Any]) -> list[tuple[str, str]]:
+    fields: list[tuple[str, str]] = []
+    for index, claim in enumerate(variant.get("claims", [])):
+        if isinstance(claim, str):
+            fields.append((f"claims[{index}]", claim))
+    disclosure = variant.get("disclosure")
+    if isinstance(disclosure, str):
+        fields.append(("disclosure", disclosure))
+    copy_payload = variant.get("copy", {})
+    if isinstance(copy_payload, dict):
+        for field_name, field_value in copy_payload.items():
+            if isinstance(field_value, list):
+                for index, item in enumerate(field_value):
+                    if isinstance(item, str):
+                        fields.append((f"copy.{field_name}[{index}]", item))
+            elif isinstance(field_value, str):
+                fields.append((f"copy.{field_name}", field_value))
+    return fields
+
+
+def _replace_guarantee_language(value: str) -> str:
+    return re.sub(
+        "guaranteed returns",
+        "responsible long-term progress",
+        value,
+        flags=re.IGNORECASE,
+    )
+
+
+def _wave2_rewrite_copy(copy_payload: dict[str, Any]) -> dict[str, Any]:
+    rewritten = copy.deepcopy(copy_payload)
+    for field_name, field_value in list(rewritten.items()):
+        if isinstance(field_value, list):
+            rewritten[field_name] = [
+                _wave2_improve_text(item) if isinstance(item, str) else item
+                for item in field_value
+            ]
+        elif isinstance(field_value, str):
+            rewritten[field_name] = _wave2_improve_text(field_value)
+    if "cta" in rewritten:
+        rewritten["cta"] = "Start your guided plan"
+    return rewritten
+
+
+def _wave2_improve_text(value: str) -> str:
+    value = _replace_guarantee_language(value)
+    if len(value) > 160:
+        return value
+    return f"{value} Clear next step, measured expectations."

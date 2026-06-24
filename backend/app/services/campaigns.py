@@ -76,6 +76,7 @@ class CampaignService:
             latest_run=self._serialize_run(latest_run),
             strategy=stage_payloads.get("strategy"),
             journey=stage_payloads.get("journey"),
+            mock_deployment=stage_payloads.get("mock_deployment"),
             creative_variants=[
                 self._serialize_creative_variant(variant) for variant in creative_variants
             ],
@@ -155,6 +156,7 @@ class CampaignService:
     ) -> PolicyFindingSummary:
         return PolicyFindingSummary(
             id=finding.id,
+            variant_id=finding.variant_id,
             source=finding.source,
             rule_id=finding.rule_id,
             severity=finding.severity,

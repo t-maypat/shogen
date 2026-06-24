@@ -145,12 +145,42 @@ class CampaignRepository:
         )
         return list(self.session.scalars(stmt))
 
+    def list_active_creative_variants_for_run(
+        self,
+        run_id: uuid.UUID,
+    ) -> list[CreativeVariant]:
+        stmt = (
+            select(CreativeVariant)
+            .where(
+                CreativeVariant.run_id == run_id,
+                CreativeVariant.status != "revised",
+            )
+            .order_by(CreativeVariant.created_at.asc(), CreativeVariant.id.asc())
+        )
+        return list(self.session.scalars(stmt))
+
     def list_policy_findings_for_run(self, run_id: uuid.UUID) -> list[PolicyFinding]:
         stmt = (
             select(PolicyFinding)
             .where(PolicyFinding.run_id == run_id)
             .order_by(PolicyFinding.created_at.asc(), PolicyFinding.id.asc())
         )
+        return list(self.session.scalars(stmt))
+
+    def list_open_blocking_policy_findings_for_run(
+        self,
+        run_id: uuid.UUID,
+        *,
+        source: str | None = None,
+    ) -> list[PolicyFinding]:
+        stmt = select(PolicyFinding).where(
+            PolicyFinding.run_id == run_id,
+            PolicyFinding.status == "open",
+            PolicyFinding.severity == "blocking",
+        )
+        if source is not None:
+            stmt = stmt.where(PolicyFinding.source == source)
+        stmt = stmt.order_by(PolicyFinding.created_at.asc(), PolicyFinding.id.asc())
         return list(self.session.scalars(stmt))
 
     def create_policy_finding(
@@ -187,6 +217,36 @@ class CampaignRepository:
         self.session.flush()
         return finding
 
+    def resolve_open_policy_findings_for_variants(
+        self,
+        variant_ids: list[uuid.UUID],
+        *,
+        resolved_at: datetime,
+        reason: str,
+        resolved_by_variant_id: uuid.UUID | None = None,
+    ) -> list[PolicyFinding]:
+        if not variant_ids:
+            return []
+
+        stmt = select(PolicyFinding).where(
+            PolicyFinding.variant_id.in_(variant_ids),
+            PolicyFinding.status == "open",
+        )
+        findings = list(self.session.scalars(stmt))
+        for finding in findings:
+            finding.status = "resolved"
+            finding.resolved_at = resolved_at
+            metadata = dict(finding.metadata_json or {})
+            metadata["resolution"] = {
+                "reason": reason,
+                "resolved_by_variant_id": (
+                    str(resolved_by_variant_id) if resolved_by_variant_id else None
+                ),
+            }
+            finding.metadata_json = metadata
+        self.session.flush()
+        return findings
+
     def update_creative_variant_status(
         self,
         variant: CreativeVariant,
@@ -206,6 +266,26 @@ class CampaignRepository:
         )
         return self.session.scalar(stmt)
 
+    def create_approval(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        approved_by: str,
+        status: str,
+        notes: str | None = None,
+    ) -> Approval:
+        approval = Approval(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            approved_by=approved_by,
+            status=status,
+            notes=notes,
+        )
+        self.session.add(approval)
+        self.session.flush()
+        return approval
+
     def list_evaluation_results_for_run(self, run_id: uuid.UUID) -> list[EvaluationResult]:
         stmt = (
             select(EvaluationResult)
@@ -213,6 +293,30 @@ class CampaignRepository:
             .order_by(EvaluationResult.created_at.asc(), EvaluationResult.id.asc())
         )
         return list(self.session.scalars(stmt))
+
+    def create_evaluation_result(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        variant_id: uuid.UUID,
+        persona_id: str,
+        channel: str,
+        scores_json: dict,
+        total_score: float | int,
+    ) -> EvaluationResult:
+        result = EvaluationResult(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            variant_id=variant_id,
+            persona_id=persona_id,
+            channel=channel,
+            scores_json=scores_json,
+            total_score=total_score,
+        )
+        self.session.add(result)
+        self.session.flush()
+        return result
 
     def get_latest_wave_proposal_for_run(self, run_id: uuid.UUID) -> WaveProposal | None:
         stmt = (
@@ -222,6 +326,24 @@ class CampaignRepository:
             .limit(1)
         )
         return self.session.scalar(stmt)
+
+    def create_wave_proposal(
+        self,
+        *,
+        campaign_id: uuid.UUID,
+        run_id: uuid.UUID,
+        proposal_json: dict,
+        rationale_json: dict,
+    ) -> WaveProposal:
+        proposal = WaveProposal(
+            campaign_id=campaign_id,
+            run_id=run_id,
+            proposal_json=proposal_json,
+            rationale_json=rationale_json,
+        )
+        self.session.add(proposal)
+        self.session.flush()
+        return proposal
 
     def create_event(
         self,
