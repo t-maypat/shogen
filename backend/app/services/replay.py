@@ -25,7 +25,6 @@ class GoldenReplayScenario:
     name: str
     brief: dict
     description: str | None = None
-    workflow_delay_seconds: float | None = None
 
 
 class ReplayService:
@@ -52,6 +51,5 @@ def load_golden_replay_scenario(scenario: str) -> GoldenReplayScenario:
         scenario=payload["scenario"],
         name=payload["name"],
         description=payload.get("description"),
-        workflow_delay_seconds=payload.get("workflow_delay_seconds"),
         brief=payload["brief"],
     )
