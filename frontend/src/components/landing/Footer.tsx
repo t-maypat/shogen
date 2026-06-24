@@ -1,9 +1,9 @@
 import { Github, Twitter, Linkedin } from "lucide-react";
 
 const footerLinks = {
-  Product: ["Features", "Workflow", "Pricing", "Changelog"],
-  Resources: ["Documentation", "API Reference", "Blog", "Case Studies"],
-  Company: ["About", "Careers", "Contact", "Privacy"],
+  Product: ["Features", "Workflow", "Changelog"],
+  Resources: ["Documentation", "API Reference", "Case Studies"],
+  Company: ["About", "Contact", "Privacy"],
 };
 
 export function Footer() {
@@ -13,7 +13,7 @@ export function Footer() {
         <div className="grid gap-12 md:grid-cols-5">
           {/* Brand column */}
           <div className="md:col-span-2">
-            <div className="flex items-center gap-3">
+            <div className="mb-4 flex items-center gap-3">
               <div className="relative grid h-8 w-8 rotate-45 place-items-center rounded-lg bg-orange shadow-[inset_0_0_0_1px_rgba(255,255,255,0.18)]">
                 <span className="z-1 -rotate-45 font-display text-sm font-extrabold text-white">
                   S

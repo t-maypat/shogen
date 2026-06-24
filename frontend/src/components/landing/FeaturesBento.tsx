@@ -52,7 +52,7 @@ const features = [
       "Score every variant on message fit, channel fit, CTA clarity, and journey consistency with directional insights.",
     accent: "text-yellow",
     accentBg: "bg-yellow/10",
-    span: "md:col-span-1 md:row-span-1",
+    span: " md:col-span-2",
   },
   {
     icon: RefreshCcw,
@@ -61,7 +61,7 @@ const features = [
       "Automatically propose allocation shifts and creative rewrites based on evaluation scores.",
     accent: "text-orange",
     accentBg: "bg-orange/10",
-    span: "md:col-span-2",
+    span: "md:col-span-1 md:row-span-1",
   },
 ];
 
@@ -77,7 +77,7 @@ export function FeaturesBento() {
           }
         });
       },
-      { threshold: 0.15, rootMargin: "0px 0px -50px 0px" }
+      { threshold: 0.15, rootMargin: "0px 0px -50px 0px" },
     );
 
     const items = sectionRef.current?.querySelectorAll(".reveal");
@@ -98,12 +98,12 @@ export function FeaturesBento() {
           <span className="mb-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-green">
             Platform capabilities
           </span>
-          <h2 className="font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl lg:text-5xl">
+          <h2 className="mb-2 font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl lg:text-5xl">
             Every stage, one workspace
           </h2>
-          <p className="mt-4 text-base leading-relaxed text-muted">
-            Shogun unifies strategy, creative, compliance, and optimization into a
-            single AI-assisted pipeline — so nothing falls between the cracks.
+          <p className="mt-8 text-base leading-relaxed text-muted">
+            Shogun unifies strategy, creative, compliance, and optimization into
+            a single AI-assisted pipeline — so nothing falls between the cracks.
           </p>
         </div>
 

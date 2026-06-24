@@ -12,7 +12,8 @@ export function HeroSection() {
         <div
           className="absolute inset-0 opacity-[0.07]"
           style={{
-            backgroundImage: "radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)",
+            backgroundImage:
+              "radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px)",
             backgroundSize: "24px 24px",
           }}
         />
@@ -30,9 +31,7 @@ export function HeroSection() {
       {/* Content */}
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-64px)] max-w-7xl flex-col items-center justify-center px-6 text-center lg:px-8">
         {/* Badge */}
-        <div
-          className="animate-fade-up mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-4 py-1.5 backdrop-blur-sm"
-        >
+        <div className="animate-fade-up mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-4 py-1.5 backdrop-blur-sm">
           <span className="h-1.5 w-1.5 rounded-full bg-green animate-glow-pulse" />
           <span className="text-xs font-semibold text-white/70">
             AI-powered campaign orchestration
@@ -40,7 +39,10 @@ export function HeroSection() {
         </div>
 
         {/* Headline */}
-        <h1 className="animate-fade-up mb-6 max-w-4xl font-display text-5xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-6xl lg:text-7xl" style={{ animationDelay: "0.1s" }}>
+        <h1
+          className="animate-fade-up mb-6 max-w-4xl font-display text-5xl font-extrabold leading-[1.1] tracking-tight text-white sm:text-6xl lg:text-7xl"
+          style={{ animationDelay: "0.1s" }}
+        >
           Orchestrate campaigns{" "}
           <span className="bg-gradient-to-r from-orange via-yellow to-orange bg-clip-text text-transparent">
             with intelligence
@@ -52,9 +54,9 @@ export function HeroSection() {
           className="animate-fade-up mx-auto mb-10 max-w-2xl text-base leading-relaxed text-white/50 sm:text-lg"
           style={{ animationDelay: "0.2s" }}
         >
-          From brief to deployment in one AI-assisted workflow. Shogun generates personas,
-          crafts multi-channel creative, runs policy checks, and optimizes allocation —
-          all before a single dollar is spent.
+          From brief to deployment in one AI-assisted workflow. Shogun generates
+          personas, crafts multi-channel creative, runs policy checks, and
+          optimizes allocation — all before a single dollar is spent.
         </p>
 
         {/* CTAs */}
@@ -67,9 +69,15 @@ export function HeroSection() {
             className="group flex items-center gap-2 rounded-xl bg-orange px-7 py-3.5 text-sm font-bold text-white shadow-[0_0_30px_rgba(220,103,72,0.3)] transition-all hover:-translate-y-0.5 hover:shadow-[0_0_40px_rgba(220,103,72,0.45)]"
           >
             Launch workspace
-            <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
+            <ArrowRight
+              size={16}
+              className="transition-transform group-hover:translate-x-1"
+            />
           </button>
-          <button className="flex items-center gap-2 rounded-xl border border-white/30 bg-white/[0.08] px-7 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:border-white/50 hover:bg-white/[0.12]">
+          <button
+            className="flex items-center gap-2 rounded-xl border border-white/30 bg-white/[0.08] px-7 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:border-white/50 hover:bg-white/[0.12]"
+            style={{ color: "white" }}
+          >
             <Play size={14} className="fill-current" />
             Watch demo
           </button>
@@ -90,13 +98,20 @@ export function HeroSection() {
               </div>
               <div className="ml-4 flex items-center gap-2">
                 <div className="grid h-5 w-5 rotate-45 place-items-center rounded bg-orange">
-                  <span className="-rotate-45 font-display text-[7px] font-extrabold text-white">S</span>
+                  <span className="-rotate-45 font-display text-[7px] font-extrabold text-white">
+                    S
+                  </span>
                 </div>
-                <span className="font-display text-[10px] font-bold tracking-[0.14em] text-white/70">SHOGUN</span>
+                <span className="font-display text-[10px] font-bold tracking-[0.14em] text-white/70">
+                  SHOGUN
+                </span>
               </div>
               <div className="ml-auto flex gap-6">
                 {["Brief", "Journey", "Creative", "Results"].map((tab) => (
-                  <span key={tab} className={`text-[10px] font-semibold ${tab === "Journey" ? "text-white" : "text-white/30"}`}>
+                  <span
+                    key={tab}
+                    className={`text-[10px] font-semibold ${tab === "Journey" ? "text-white" : "text-white/30"}`}
+                  >
                     {tab}
                   </span>
                 ))}
@@ -107,20 +122,43 @@ export function HeroSection() {
             <div className="grid grid-cols-3 gap-3 p-4">
               {/* Mock workflow nodes */}
               {[
-                { label: "Strategy", color: "bg-green/20 text-green", status: "✓" },
-                { label: "Creative", color: "bg-orange/20 text-orange", status: "✓" },
-                { label: "Policy", color: "bg-yellow/20 text-yellow", status: "!" },
+                {
+                  label: "Strategy",
+                  color: "bg-green/20 text-green",
+                  status: "✓",
+                },
+                {
+                  label: "Creative",
+                  color: "bg-orange/20 text-orange",
+                  status: "✓",
+                },
+                {
+                  label: "Policy",
+                  color: "bg-yellow/20 text-yellow",
+                  status: "!",
+                },
               ].map((node) => (
-                <div key={node.label} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                <div
+                  key={node.label}
+                  className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"
+                >
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`inline-grid h-5 w-5 place-items-center rounded text-[8px] font-bold ${node.color}`}>
+                    <span
+                      className={`inline-grid h-5 w-5 place-items-center rounded text-[8px] font-bold ${node.color}`}
+                    >
                       {node.status}
                     </span>
-                    <span className="text-[7px] uppercase tracking-wider text-white/20 font-bold">AI Assist</span>
+                    <span className="text-[7px] uppercase tracking-wider text-white/20 font-bold">
+                      AI Assist
+                    </span>
                   </div>
-                  <div className="text-[10px] font-bold text-white/70">{node.label}</div>
+                  <div className="text-[10px] font-bold text-white/70">
+                    {node.label}
+                  </div>
                   <div className="mt-1 h-1 w-full rounded-full bg-white/[0.06]">
-                    <div className={`h-full rounded-full ${node.label === "Policy" ? "w-3/4 bg-yellow/40" : "w-full bg-green/40"}`} />
+                    <div
+                      className={`h-full rounded-full ${node.label === "Policy" ? "w-3/4 bg-yellow/40" : "w-full bg-green/40"}`}
+                    />
                   </div>
                 </div>
               ))}
@@ -133,9 +171,18 @@ export function HeroSection() {
                 { label: "Policy score", value: "96", color: "text-green" },
                 { label: "Channel fit", value: "88", color: "text-orange" },
               ].map((metric) => (
-                <div key={metric.label} className="flex-1 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
-                  <div className={`font-display text-lg font-extrabold ${metric.color}`}>{metric.value}</div>
-                  <div className="text-[8px] text-white/30 uppercase tracking-wider font-semibold">{metric.label}</div>
+                <div
+                  key={metric.label}
+                  className="flex-1 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3"
+                >
+                  <div
+                    className={`font-display text-lg font-extrabold ${metric.color}`}
+                  >
+                    {metric.value}
+                  </div>
+                  <div className="text-[8px] text-white/30 uppercase tracking-wider font-semibold">
+                    {metric.label}
+                  </div>
                 </div>
               ))}
             </div>

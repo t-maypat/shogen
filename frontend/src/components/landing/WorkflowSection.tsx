@@ -13,16 +13,76 @@ import {
 } from "lucide-react";
 
 const stages = [
-  { id: "brief", label: "Brief", eyebrow: "Input", icon: FileText, color: "bg-green/15 text-green" },
-  { id: "strategy", label: "Strategy", eyebrow: "AI Assist", icon: Sparkles, color: "bg-orange/15 text-orange" },
-  { id: "journey", label: "Journey", eyebrow: "Plan", icon: Route, color: "bg-green/15 text-green" },
-  { id: "creative", label: "Creative", eyebrow: "Generate", icon: PenTool, color: "bg-purple/15 text-purple" },
-  { id: "policy", label: "Policy", eyebrow: "Deterministic", icon: Shield, color: "bg-yellow/15 text-yellow" },
-  { id: "semantic", label: "Semantic", eyebrow: "AI Assist", icon: Brain, color: "bg-purple/15 text-purple" },
-  { id: "approval", label: "Approval", eyebrow: "Human Gate", icon: UserCheck, color: "bg-orange/15 text-orange" },
-  { id: "deploy", label: "Deploy", eyebrow: "Preview", icon: Rocket, color: "bg-green/15 text-green" },
-  { id: "evaluation", label: "Evaluation", eyebrow: "Synthetic", icon: BarChart3, color: "bg-purple/15 text-purple" },
-  { id: "wave2", label: "Wave 2", eyebrow: "Adapt", icon: RefreshCcw, color: "bg-orange/15 text-orange" },
+  {
+    id: "brief",
+    label: "Brief",
+    eyebrow: "Input",
+    icon: FileText,
+    color: "bg-green/15 text-green",
+  },
+  {
+    id: "strategy",
+    label: "Strategy",
+    eyebrow: "AI Assist",
+    icon: Sparkles,
+    color: "bg-orange/15 text-orange",
+  },
+  {
+    id: "journey",
+    label: "Journey",
+    eyebrow: "Plan",
+    icon: Route,
+    color: "bg-green/15 text-green",
+  },
+  {
+    id: "creative",
+    label: "Creative",
+    eyebrow: "Generate",
+    icon: PenTool,
+    color: "bg-purple/15 text-purple",
+  },
+  {
+    id: "policy",
+    label: "Policy",
+    eyebrow: "Deterministic",
+    icon: Shield,
+    color: "bg-yellow/15 text-yellow",
+  },
+  {
+    id: "semantic",
+    label: "Semantic",
+    eyebrow: "AI Assist",
+    icon: Brain,
+    color: "bg-purple/15 text-purple",
+  },
+  {
+    id: "approval",
+    label: "Approval",
+    eyebrow: "Human Gate",
+    icon: UserCheck,
+    color: "bg-orange/15 text-orange",
+  },
+  {
+    id: "deploy",
+    label: "Deploy",
+    eyebrow: "Preview",
+    icon: Rocket,
+    color: "bg-green/15 text-green",
+  },
+  {
+    id: "evaluation",
+    label: "Evaluation",
+    eyebrow: "Synthetic",
+    icon: BarChart3,
+    color: "bg-purple/15 text-purple",
+  },
+  {
+    id: "wave2",
+    label: "Wave 2",
+    eyebrow: "Adapt",
+    icon: RefreshCcw,
+    color: "bg-orange/15 text-orange",
+  },
 ];
 
 export function WorkflowSection() {
@@ -37,7 +97,7 @@ export function WorkflowSection() {
           }
         });
       },
-      { threshold: 0.1, rootMargin: "0px 0px -30px 0px" }
+      { threshold: 0.1, rootMargin: "0px 0px -30px 0px" },
     );
 
     const items = sectionRef.current?.querySelectorAll(".reveal");
@@ -47,19 +107,23 @@ export function WorkflowSection() {
   }, []);
 
   return (
-    <section id="workflow" ref={sectionRef} className="bg-paper-deep py-24 sm:py-32">
+    <section
+      id="workflow"
+      ref={sectionRef}
+      className="bg-paper-deep py-24 sm:py-32"
+    >
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         {/* Section header */}
         <div className="reveal mx-auto max-w-2xl text-center">
           <span className="mb-4 inline-block text-xs font-bold uppercase tracking-[0.12em] text-orange">
             End-to-end pipeline
           </span>
-          <h2 className="font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl lg:text-5xl">
+          <h2 className="mb-2 font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl lg:text-5xl">
             10 stages, zero gaps
           </h2>
           <p className="mt-4 text-base leading-relaxed text-muted">
-            From your initial brief to Wave 2 optimization, every stage is connected,
-            traceable, and collaborative.
+            From your initial brief to Wave 2 optimization, every stage is
+            connected, traceable, and collaborative.
           </p>
         </div>
 
@@ -74,7 +138,7 @@ export function WorkflowSection() {
               >
                 {/* Connector line */}
                 {index < stages.length - 1 && index !== 4 && (
-                  <div className="absolute -right-2 top-1/2 hidden h-px w-4 border-t-2 border-dashed border-line-dark md:block" />
+                  <div className="absolute -right-4 top-1/2 hidden h-px w-4 border-t-2 border-dashed border-line-dark md:block" />
                 )}
 
                 <div className="flex h-full flex-col items-center rounded-2xl border border-line bg-paper p-5 text-center shadow-[0_1px_2px_rgba(24,28,26,0.04)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_6px_20px_rgba(24,28,26,0.07)]">
@@ -84,7 +148,9 @@ export function WorkflowSection() {
                   </span>
 
                   {/* Icon */}
-                  <div className={`mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl ${stage.color} transition-transform duration-300 group-hover:scale-110`}>
+                  <div
+                    className={`mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl ${stage.color} transition-transform duration-300 group-hover:scale-110`}
+                  >
                     <Icon size={18} />
                   </div>
 
@@ -112,8 +178,9 @@ export function WorkflowSection() {
                 Human-in-the-loop by design
               </p>
               <p className="mt-1 text-xs leading-relaxed text-green-dark/70">
-                AI handles heavy lifting across strategy, creative, and evaluation. But the
-                approval gate ensures a human always has the final say before deployment.
+                AI handles heavy lifting across strategy, creative, and
+                evaluation. But the approval gate ensures a human always has the
+                final say before deployment.
               </p>
             </div>
           </div>
