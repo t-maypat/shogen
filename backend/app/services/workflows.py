@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.provider import AzureOpenAIModelProvider, ModelProvider, ModelProviderError
@@ -177,7 +178,15 @@ class WorkflowService:
         if campaign is None:
             raise CampaignNotFoundError(campaign_id)
 
-        run = self.repository.get_latest_run(campaign_id)
+        # Acquire a row lock on the latest run to prevent race conditions during approval
+        stmt = (
+            select(WorkflowRun)
+            .where(WorkflowRun.campaign_id == campaign_id)
+            .order_by(WorkflowRun.created_at.desc(), WorkflowRun.id.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        run = self.repository.session.scalar(stmt)
         if run is None:
             raise WorkflowApprovalNotReadyError(
                 campaign_id,

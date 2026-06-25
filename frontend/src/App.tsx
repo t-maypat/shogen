@@ -30,6 +30,7 @@ export default function App() {
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [briefKey, setBriefKey] = useState(0);
   const [briefData, setBriefData] = useState<CampaignBrief>(demoBrief);
+  const [approving, setApproving] = useState(false);
   const unsubRef = useRef<(() => void) | null>(null);
 
   const toast = (message: string) => {
@@ -190,11 +191,14 @@ export default function App() {
   };
 
   const approve = async () => {
-    if (status !== "approval_required" || !campaignId) return;
+    if (status !== "approval_required" || !campaignId || approving) return;
     try {
+      setApproving(true);
       await api.approveCampaign(campaignId);
     } catch (err: any) {
       toast(err.message);
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -227,7 +231,7 @@ export default function App() {
           />
         )}
         {activeTab === "creative" && (
-          <CreativeTab status={status} onApprove={approve} />
+          <CreativeTab status={status} onApprove={approve} approving={approving} />
         )}
         {activeTab === "results" && (
           <ResultsTab
