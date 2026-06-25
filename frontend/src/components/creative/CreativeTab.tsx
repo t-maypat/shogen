@@ -16,12 +16,21 @@ import {
   Sparkles,
   WandSparkles,
 } from "lucide-react";
-import { channelLabels, findings, kpis, personas, variants } from "../../data/demo";
-import type { CampaignStatus, Channel, CreativeVariant } from "../../types";
+import {
+  channelLabels,
+  findings as demoFindings,
+  personas as demoPersonas,
+  variants as demoVariants,
+} from "../../data/demo";
+import type { CampaignStatus, Channel, CreativeVariant, Persona, PolicyFinding } from "../../types";
 
 interface CreativeTabProps {
   status: CampaignStatus;
   onApprove: () => void;
+  approving?: boolean;
+  variants?: CreativeVariant[];
+  findings?: PolicyFinding[];
+  personas?: Persona[];
 }
 
 const channels: { id: Channel; label: string; icon: typeof Search }[] = [
@@ -61,21 +70,31 @@ function EmailPreview({ variant }: { variant: CreativeVariant }) {
   </div>;
 }
 
-export function CreativeTab({ status, onApprove }: CreativeTabProps) {
+export function CreativeTab({
+  status,
+  onApprove,
+  approving = false,
+  variants: variantsProp,
+  findings: findingsProp,
+  personas: personasProp,
+}: CreativeTabProps) {
+  const variants = variantsProp?.length ? variantsProp : demoVariants;
+  const findings = findingsProp?.length ? findingsProp : demoFindings;
+  const personas = personasProp?.length ? personasProp : demoPersonas;
   const [personaId, setPersonaId] = useState("p1");
   const [channel, setChannel] = useState<Channel>("google_search");
   const [reviewTab, setReviewTab] = useState<"findings" | "history">("findings");
   const variant = variants.find((item) => item.personaId === personaId && item.channel === channel) ?? variants[0];
   const selectedFindings = findings.filter((finding) => finding.variantId === variant.id);
-  const persona = personas.find((item) => item.id === personaId)!;
-  const ready = status === "approval_required";
+  const persona = personas.find((item) => item.id === personaId) ?? personas[0];
+  const ready = status === "approval_required" && !approving;
   const complete = status === "completed" || status === "approved" || status === "evaluating";
 
   const summary = useMemo(() => ({
     ready: variants.filter((item) => item.status === "policy_ready").length,
     warning: variants.filter((item) => item.status === "warning").length,
     blocking: findings.filter((item) => item.severity === "blocking" && !item.resolved).length,
-  }), []);
+  }), [variants, findings]);
 
   return (
     <div className="page page-creative">
@@ -125,8 +144,8 @@ export function CreativeTab({ status, onApprove }: CreativeTabProps) {
       <section className={`approval-bar ${complete ? "approved" : ""}`}>
         <div className="approval-icon">{complete ? <CheckCircle2 size={21} /> : <ShieldCheck size={21} />}</div>
         <div><span className="eyebrow">Human approval gate</span><h3>{complete ? "Campaign approved" : ready ? "All blocking findings are resolved" : "Review is still in progress"}</h3><p>{complete ? "Mock deployment and synthetic evaluation have been authorized." : "One non-blocking semantic note remains. Final legal and platform review stays with your team."}</p></div>
-        <div className="approval-evidence"><span><Check size={13} /> 9 variants reviewed</span><span><Check size={13} /> 0 open blockers</span></div>
-        <button type="button" className="primary-button approve-button" onClick={onApprove} disabled={!ready}>{complete ? <><Check size={16} /> Approved</> : <><ShieldCheck size={16} /> Approve for mock deployment <ArrowRight size={15} /></>}</button>
+        <div className="approval-evidence"><span><Check size={13} /> {variants.length} variants reviewed</span><span><Check size={13} /> {summary.blocking} open blockers</span></div>
+        <button type="button" className="primary-button approve-button" onClick={onApprove} disabled={!ready}>{complete ? <><Check size={16} /> Approved</> : approving ? <><span className="button-spinner" /> Approving</> : <><ShieldCheck size={16} /> Approve for mock deployment <ArrowRight size={15} /></>}</button>
       </section>
     </div>
   );

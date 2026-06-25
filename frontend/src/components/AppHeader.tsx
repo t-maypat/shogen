@@ -5,9 +5,10 @@ import {
   CircleHelp,
   Command,
   Radio,
+  Satellite,
   Search,
 } from "lucide-react";
-import type { CampaignStatus, TabId } from "../types";
+import type { CampaignStatus, ConnectionState, TabId } from "../types";
 
 const tabs: { id: TabId; label: string; number: string }[] = [
   { id: "brief", label: "Brief", number: "01" },
@@ -26,12 +27,21 @@ const statusLabels: Record<CampaignStatus, string> = {
   failed: "Needs attention",
 };
 
+const connectionLabels: Record<ConnectionState, string> = {
+  live: "Live",
+  reconnecting: "Reconnecting",
+  error: "Disconnected",
+  idle: "Idle",
+};
+
 interface AppHeaderProps {
   activeTab: TabId;
   status: CampaignStatus;
   onTabChange: (tab: TabId) => void;
   onOpenActivity: () => void;
   onToast?: (message: string) => void;
+  replayMode?: boolean;
+  connection?: ConnectionState;
 }
 
 export function AppHeader({
@@ -40,6 +50,8 @@ export function AppHeader({
   onTabChange,
   onOpenActivity,
   onToast,
+  replayMode,
+  connection = "idle",
 }: AppHeaderProps) {
   return (
     <>
@@ -116,9 +128,12 @@ export function AppHeader({
           ))}
         </nav>
         <div className="workspace-meta">
-          <span className="mode-badge">
-            <Radio size={13} /> Replay
-          </span>
+          {replayMode !== undefined && (
+            <span className="mode-badge">
+              {replayMode ? <Radio size={13} /> : <Satellite size={13} />} {replayMode ? "Replay" : "Live"}
+            </span>
+          )}
+          <span className={`connection-dot connection-${connection}`} title={connectionLabels[connection]} />
           <button
             className={`status-pill status-${status}`}
             type="button"

@@ -23,13 +23,21 @@ import {
   Users,
   WandSparkles,
 } from "lucide-react";
-import { channelLabels, journeySteps, kpis, personas } from "../../data/demo";
-import type { CampaignStatus, WorkflowStage } from "../../types";
+import {
+  channelLabels,
+  journeySteps as demoJourneySteps,
+  kpis as demoKpis,
+  personas as demoPersonas,
+} from "../../data/demo";
+import type { CampaignStatus, JourneyStep, KPI, Persona, WorkflowStage } from "../../types";
 
 interface JourneyTabProps {
   stages: WorkflowStage[];
   status: CampaignStatus;
   onOpenCreative: () => void;
+  personas?: Persona[];
+  kpis?: KPI[];
+  journeySteps?: JourneyStep[];
 }
 
 const stageIcons = [Target, Users, ArrowRight, WandSparkles, ShieldAlert, Sparkles, UserRound, ArrowRight, Target, Sparkles];
@@ -50,7 +58,14 @@ function StageNodeLabel({ stage, index }: { stage: WorkflowStage; index: number 
   );
 }
 
-export function JourneyTab({ stages, status, onOpenCreative }: JourneyTabProps) {
+export function JourneyTab({
+  stages,
+  status,
+  onOpenCreative,
+  personas = demoPersonas,
+  kpis = demoKpis,
+  journeySteps = demoJourneySteps,
+}: JourneyTabProps) {
   const [selectedStageId, setSelectedStageId] = useState("approval");
   const [selectedPersona, setSelectedPersona] = useState("p1");
   const selectedStage = stages.find((stage) => stage.id === selectedStageId) ?? stages[0];
