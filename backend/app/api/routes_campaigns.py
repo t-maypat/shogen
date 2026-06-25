@@ -269,7 +269,7 @@ async def stream_campaign_events(
 
             with session_factory() as stream_session:
                 latest_run = CampaignRepository(stream_session).get_latest_run(campaign_id)
-            if latest_run is None or latest_run.status != "running":
+            if latest_run is None or latest_run.status not in {"running", "approval_required"}:
                 break
 
             await asyncio.sleep(0.2)

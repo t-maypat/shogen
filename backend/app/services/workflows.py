@@ -654,6 +654,15 @@ class CampaignWorkflowRunner:
                 status=next_status,
                 display=self._display_summary(stage_name, stage_result.payload),
             )
+            if terminal_status == "approval_required":
+                event_service.record_workflow_event(
+                    campaign_id=campaign.id,
+                    run_id=run.id,
+                    event_type="approval.required",
+                    stage=stage_name,
+                    status="approval_required",
+                    display=self._display_summary(stage_name, stage_result.payload),
+                )
             session.commit()
             return state
 

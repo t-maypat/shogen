@@ -18,12 +18,14 @@ class EvaluationScores(BaseModel):
     weighted_total: int = Field(ge=0, le=100)
 
 
+from app.schemas.creative import CreativeCopy
+
 class Wave2Rewrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     variant_id: NonEmptyStr
     client_variant_id: NonEmptyStr
-    rewritten_copy: dict[str, Any]
+    rewritten_copy: CreativeCopy
     rationale: NonEmptyStr
 
 

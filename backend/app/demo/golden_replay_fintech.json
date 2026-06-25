@@ -2,7 +2,6 @@
   "scenario": "fintech",
   "name": "NestWise June Campaign",
   "description": "Golden fintech demo brief for deterministic replay mode.",
-  "workflow_delay_seconds": 0.05,
   "brief": {
     "product_name": "NestWise",
     "product_category": "Fintech savings and starter investing app",
