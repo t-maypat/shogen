@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -26,33 +27,116 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { allocationChanges, channelLabels, evaluationScores, personas, variants } from "../../data/demo";
-import type { CampaignStatus } from "../../types";
+import {
+  allocationChanges as demoAllocationChanges,
+  channelLabels,
+  evaluationScores as demoEvaluationScores,
+  personas as demoPersonas,
+  variants as demoVariants,
+} from "../../data/demo";
+import type { AdaptedWave2 } from "../../api/adapt";
+import type { AllocationChange, CampaignStatus, CreativeVariant, EvaluationScore, Persona } from "../../types";
 
 interface ResultsTabProps {
   status: CampaignStatus;
   onReviewCreative: () => void;
+  personas?: Persona[];
+  variants?: CreativeVariant[];
+  evaluationScores?: EvaluationScore[];
+  allocationChanges?: AllocationChange[];
+  wave2?: AdaptedWave2;
 }
 
-const factorData = [
-  { name: "Message fit", score: 86 },
-  { name: "Channel fit", score: 87 },
-  { name: "CTA clarity", score: 88 },
-  { name: "Policy quality", score: 95 },
-  { name: "Journey consistency", score: 88 },
+const FACTOR_DIMENSIONS: { key: keyof EvaluationScore & string; name: string }[] = [
+  { key: "messageFit", name: "Message fit" },
+  { key: "channelFit", name: "Channel fit" },
+  { key: "ctaClarity", name: "CTA clarity" },
+  { key: "policyQuality", name: "Policy quality" },
+  { key: "journeyConsistency", name: "Journey consistency" },
 ];
 
-const allocationData = personas.map((persona) => ({
-  name: persona.shortName,
-  wave1: allocationChanges.filter((item) => item.personaId === persona.id).reduce((sum, item) => sum + item.wave1, 0),
-  wave2: allocationChanges.filter((item) => item.personaId === persona.id).reduce((sum, item) => sum + item.wave2, 0),
-}));
+function leadLine(copy: Record<string, unknown>): string {
+  if (Array.isArray(copy.descriptions)) return (copy.descriptions as string[])[0] ?? "";
+  if (typeof copy.introText === "string") return copy.introText;
+  if (typeof copy.intro_text === "string") return copy.intro_text as string;
+  if (typeof copy.subject === "string") return copy.subject;
+  return "";
+}
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string; color: string }[]; label?: string }) => active && payload?.length ? <div className="chart-tooltip"><strong>{label}</strong>{payload.map((item) => <span key={item.name}><i style={{ background: item.color }} />{item.name}: {item.value}{item.value <= 50 ? "%" : ""}</span>)}</div> : null;
 
-export function ResultsTab({ status, onReviewCreative }: ResultsTabProps) {
+export function ResultsTab({
+  status,
+  onReviewCreative,
+  personas: personasProp,
+  variants: variantsProp,
+  evaluationScores: evaluationScoresProp,
+  allocationChanges: allocationChangesProp,
+  wave2,
+}: ResultsTabProps) {
+  const personas = personasProp?.length ? personasProp : demoPersonas;
+  const variants = variantsProp?.length ? variantsProp : demoVariants;
+  const evaluationScores = evaluationScoresProp?.length ? evaluationScoresProp : demoEvaluationScores;
+  const allocationChanges = allocationChangesProp?.length ? allocationChangesProp : demoAllocationChanges;
+
   const complete = status === "completed";
   const overall = Math.round(evaluationScores.reduce((sum, item) => sum + item.weightedTotal, 0) / evaluationScores.length);
+
+  const factorData = useMemo(
+    () =>
+      FACTOR_DIMENSIONS.map(({ key, name }) => ({
+        name,
+        score: Math.round(evaluationScores.reduce((sum, item) => sum + (item[key] as number), 0) / evaluationScores.length),
+      })),
+    [evaluationScores],
+  );
+
+  const allocationData = useMemo(
+    () =>
+      personas.map((persona) => ({
+        name: persona.shortName,
+        wave1: allocationChanges.filter((item) => item.personaId === persona.id).reduce((sum, item) => sum + item.wave1, 0),
+        wave2: allocationChanges.filter((item) => item.personaId === persona.id).reduce((sum, item) => sum + item.wave2, 0),
+      })),
+    [personas, allocationChanges],
+  );
+
+  const topVariant = useMemo(
+    () => evaluationScores.reduce<EvaluationScore | undefined>((best, item) => (!best || item.weightedTotal > best.weightedTotal ? item : best), undefined),
+    [evaluationScores],
+  );
+  const weakestVariant = useMemo(
+    () => evaluationScores.reduce<EvaluationScore | undefined>((worst, item) => (!worst || item.weightedTotal < worst.weightedTotal ? item : worst), undefined),
+    [evaluationScores],
+  );
+  const weakestPersonaName = weakestVariant ? personas.find((item) => item.id === weakestVariant.personaId)?.shortName : undefined;
+  const readyVariants = variants.filter((item) => item.status === "policy_ready").length;
+  const blockedVariants = variants.filter((item) => item.status === "blocked").length;
+  const avgShift = allocationChanges.length
+    ? Math.round(allocationChanges.reduce((sum, item) => sum + Math.abs(item.wave2 - item.wave1), 0) / allocationChanges.length)
+    : 0;
+
+  const rewrite = wave2?.rewrites[0];
+  const rewriteVariant = rewrite ? variants.find((item) => item.id === rewrite.client_variant_id.replace(/_r\d+$/, "")) : undefined;
+  const rewritePersona = (rewriteVariant && personas.find((item) => item.id === rewriteVariant.personaId)) || personas[2];
+  const rewriteEval = rewriteVariant ? evaluationScores.find((item) => item.variantId === rewriteVariant.id) : undefined;
+  const rewriteLabel = rewriteVariant ? `${rewritePersona.shortName} · ${channelLabels[rewriteVariant.channel]}` : "Leena · LinkedIn";
+  const rewriteStageScore = rewriteVariant
+    ? `${rewriteVariant.journeyStage} · Score ${rewriteEval ? Math.round(rewriteEval.weightedTotal) : "—"}`
+    : "Consideration · Score 73";
+  const rewriteBefore = rewriteVariant
+    ? leadLine(rewriteVariant.copy as unknown as Record<string, unknown>)
+    : "Business months change. Your personal progress does not have to stop every time they do.";
+  const rewriteAfter = rewrite
+    ? leadLine(rewrite.rewritten_copy)
+    : "When business months change, a flexible personal plan gives you a clear place to pause, adjust, and begin again.";
+
+  const rationale = wave2?.rationale;
+  const rationaleHeading = rationale ? "Wave 2 allocation rationale" : "Change the framing, not the promise";
+  const rationaleBody =
+    rationale?.rationale ??
+    "Leena responded to flexibility, but the original line sounded too absolute. Wave 2 keeps the practical benefit while acknowledging that progress may pause during uneven business months.";
+  const rationaleTags = rationale?.allocation_summary.slice(0, 3) ?? ["Persona sensitivity", "Policy quality", "Journey consistency"];
 
   return (
     <div className={`page page-results ${!complete ? "results-preview" : ""}`}>
@@ -66,14 +150,14 @@ export function ResultsTab({ status, onReviewCreative }: ResultsTabProps) {
       <section className="readiness-hero panel">
         <div className="score-hero">
           <div className="large-score-ring" style={{ "--score": overall } as React.CSSProperties}><div><strong>{overall}</strong><span>/ 100</span></div></div>
-          <div><span className="eyebrow">Overall readiness</span><h2>Strong foundation for Wave 2</h2><p>Creative is policy-ready and well matched to the first two personas. Leena’s journey has the clearest opportunity for refinement.</p><div className="confidence-row"><span><Check />0 open blockers</span><span><TrendingUp />4 of 5 factors above 85</span></div></div>
+          <div><span className="eyebrow">Overall readiness</span><h2>Strong foundation for Wave 2</h2><p>Creative is policy-ready and matched to each persona's journey.{weakestPersonaName ? ` ${weakestPersonaName}'s journey has the clearest opportunity for refinement.` : ""}</p><div className="confidence-row"><span><Check />{blockedVariants} open blockers</span><span><TrendingUp />{factorData.filter((item) => item.score > 85).length} of {factorData.length} factors above 85</span></div></div>
         </div>
         <div className="hero-divider" />
         <div className="score-summary-grid">
-          <div><span>Top variant</span><strong>92</strong><p>Maya · Google Search</p></div>
-          <div><span>Needs attention</span><strong>73</strong><p>Leena · LinkedIn</p></div>
-          <div><span>Ready variants</span><strong>9/9</strong><p>No deterministic blockers</p></div>
-          <div><span>Wave 2 shift</span><strong>8 pts</strong><p>Reallocated directionally</p></div>
+          <div><span>Top variant</span><strong>{topVariant ? Math.round(topVariant.weightedTotal) : "—"}</strong><p>{topVariant ? `${personas.find((item) => item.id === topVariant.personaId)?.shortName ?? ""} · ${channelLabels[topVariant.channel]}` : "—"}</p></div>
+          <div><span>Needs attention</span><strong>{weakestVariant ? Math.round(weakestVariant.weightedTotal) : "—"}</strong><p>{weakestVariant ? `${personas.find((item) => item.id === weakestVariant.personaId)?.shortName ?? ""} · ${channelLabels[weakestVariant.channel]}` : "—"}</p></div>
+          <div><span>Ready variants</span><strong>{readyVariants}/{variants.length}</strong><p>No deterministic blockers</p></div>
+          <div><span>Wave 2 shift</span><strong>{avgShift} pts</strong><p>Reallocated directionally</p></div>
         </div>
       </section>
 
@@ -89,14 +173,14 @@ export function ResultsTab({ status, onReviewCreative }: ResultsTabProps) {
         <section className="panel chart-panel allocation-panel">
           <div className="panel-topline"><div><span className="eyebrow">Allocation proposal</span><h2>Wave 1 → Wave 2</h2></div><div className="chart-legend"><span><i className="wave1" />Wave 1</span><span><i className="wave2" />Wave 2</span></div></div>
           <div className="allocation-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={allocationData} margin={{ top: 12, right: 0, left: -20, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e1da" /><XAxis dataKey="name" tick={{ fill: "#50534f", fontSize: 12 }} axisLine={false} tickLine={false} /><YAxis domain={[0, 45]} tick={{ fill: "#888980", fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip content={<CustomTooltip />} cursor={{ fill: "#f5f4ef" }} /><Bar dataKey="wave1" name="Wave 1" fill="#c8c7be" radius={[4, 4, 0, 0]} barSize={23} /><Bar dataKey="wave2" name="Wave 2" fill="#2f7d67" radius={[4, 4, 0, 0]} barSize={23} /></BarChart></ResponsiveContainer></div>
-          <div className="allocation-insight"><TrendingUp size={17} /><div><strong>Shift toward proven intent</strong><p>Increase Maya and Arjun where readiness is strongest; preserve a smaller learning budget for Leena’s revised message.</p></div></div>
+          <div className="allocation-insight"><TrendingUp size={17} /><div><strong>Shift toward proven intent</strong><p>Increase allocation where readiness is strongest; preserve a smaller learning budget where messages are still being refined.</p></div></div>
         </section>
       </div>
 
       <section className="panel allocation-table-panel">
         <div className="panel-topline"><div><span className="eyebrow">Decision trail</span><h2>Every allocation change, with a reason</h2></div><span className="count-badge">Normalized to 100%</span></div>
         <div className="allocation-table-wrap"><table className="allocation-table"><thead><tr><th>Persona</th><th>Channel</th><th>Wave 1</th><th>Wave 2</th><th>Change</th><th>Reason</th></tr></thead><tbody>{allocationChanges.map((change) => {
-          const persona = personas.find((item) => item.id === change.personaId)!;
+          const persona = personas.find((item) => item.id === change.personaId) ?? personas[0];
           const delta = change.wave2 - change.wave1;
           return <tr key={`${change.personaId}-${change.channel}`}><td><span className="mini-persona" style={{ background: persona.accent }}>{persona.shortName[0]}</span><strong>{persona.shortName}</strong></td><td>{channelLabels[change.channel]}</td><td>{change.wave1}%</td><td><strong>{change.wave2}%</strong></td><td><span className={`delta ${delta > 0 ? "up" : delta < 0 ? "down" : "same"}`}>{delta > 0 ? <ArrowUpRight size={13} /> : delta < 0 ? <ArrowDownRight size={13} /> : <Minus size={13} />}{delta > 0 ? "+" : ""}{delta} pts</span></td><td>{change.reasonCode}</td></tr>;
         })}</tbody></table></div>
@@ -105,16 +189,16 @@ export function ResultsTab({ status, onReviewCreative }: ResultsTabProps) {
       <div className="wave2-grid">
         <section className="panel rewrite-panel">
           <div className="panel-topline"><div><span className="eyebrow">Wave 2 creative</span><h2>One targeted rewrite</h2></div><span className="ai-label"><WandSparkles size={13} /> AI-assisted</span></div>
-          <div className="rewrite-context"><span className="mini-persona" style={{ background: personas[2].accent }}>L</span><div><strong>Leena · LinkedIn</strong><p>Consideration · Score 73</p></div><span className="delta down"><ArrowDownRight size={13} /> 1 pt</span></div>
+          <div className="rewrite-context"><span className="mini-persona" style={{ background: rewritePersona.accent }}>{rewriteLabel[0]}</span><div><strong>{rewriteLabel}</strong><p>{rewriteStageScore}</p></div></div>
           <div className="rewrite-comparison">
-            <div><span>Wave 1</span><p>“Business months change. Your personal progress does not have to stop every time they do.”</p></div>
+            <div><span>Wave 1</span><p>“{rewriteBefore}”</p></div>
             <div className="rewrite-arrow"><ArrowRight size={16} /></div>
-            <div className="new-copy"><span>Wave 2</span><p>“When business months change, a flexible personal plan gives you a clear place to pause, adjust, and begin again.”</p></div>
+            <div className="new-copy"><span>Wave 2</span><p>“{rewriteAfter}”</p></div>
           </div>
         </section>
         <section className="panel rationale-panel">
-          <div className="rationale-icon"><Lightbulb size={19} /></div><span className="eyebrow">Optimizer rationale</span><h2>Change the framing, not the promise</h2><p>Leena responded to flexibility, but the original line sounded too absolute. Wave 2 keeps the practical benefit while acknowledging that progress may pause during uneven business months.</p>
-          <div className="rationale-tags"><span><Check size={12} /> Persona sensitivity</span><span><Check size={12} /> Policy quality</span><span><Check size={12} /> Journey consistency</span></div>
+          <div className="rationale-icon"><Lightbulb size={19} /></div><span className="eyebrow">Optimizer rationale</span><h2>{rationaleHeading}</h2><p>{rationaleBody}</p>
+          <div className="rationale-tags">{rationaleTags.map((tag) => <span key={tag}><Check size={12} />{tag}</span>)}</div>
         </section>
       </div>
 

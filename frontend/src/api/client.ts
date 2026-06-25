@@ -7,6 +7,103 @@ interface ApiEnvelope<T> {
   error: { code: string; message: string; details?: unknown } | null;
 }
 
+export interface CampaignSummaryResponse {
+  id: string;
+  tenant_id: string;
+  name: string;
+  status: string;
+  brief: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowRunResponse {
+  id: string;
+  status: string;
+  current_stage: string | null;
+  revision_count: number;
+  replay_mode: boolean;
+  error: { message?: string; type?: string } & Record<string, unknown> | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreativeVariantResponse {
+  id: string;
+  run_id: string;
+  client_variant_id: string;
+  persona_id: string;
+  channel: string;
+  journey_stage: string;
+  primary_kpi: string;
+  revision_number: number;
+  status: string;
+  claims: string[];
+  disclosure: string | null;
+  copy: Record<string, unknown>;
+  parent_variant_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PolicyFindingResponse {
+  id: string;
+  variant_id: string;
+  source: string;
+  rule_id: string | null;
+  severity: string;
+  status: string;
+  finding_type: string;
+  evidence: string;
+  message: string;
+  suggestion: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface EvaluationResultResponse {
+  id: string;
+  variant_id: string;
+  persona_id: string;
+  channel: string;
+  scores: Record<string, number>;
+  total_score: string;
+  created_at: string;
+}
+
+export interface WaveProposalResponse {
+  id: string;
+  proposal: Record<string, unknown>;
+  rationale: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface EventLogResponse {
+  id: number;
+  run_id: string | null;
+  event_type: string;
+  stage: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface CampaignStateResponse {
+  campaign: CampaignSummaryResponse;
+  latest_run: WorkflowRunResponse | null;
+  strategy: Record<string, unknown> | null;
+  journey: Record<string, unknown> | null;
+  mock_deployment: Record<string, unknown> | null;
+  creative_variants: CreativeVariantResponse[];
+  policy_findings: PolicyFindingResponse[];
+  approval: Record<string, unknown> | null;
+  evaluation_results: EvaluationResultResponse[];
+  wave_proposal: WaveProposalResponse | null;
+  events: EventLogResponse[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -39,7 +136,7 @@ export const api = {
         },
       }),
     }),
-  getCampaign: (id: string) => request<unknown>(`/api/campaigns/${id}`),
+  getCampaign: (id: string) => request<CampaignStateResponse>(`/api/campaigns/${id}`),
   runCampaign: (id: string, mode: "live" | "replay") =>
     request<{ run_id: string; status: string }>(`/api/campaigns/${id}/run`, {
       method: "POST",

@@ -19,6 +19,8 @@ export type StageStatus =
 
 export type TabId = "brief" | "journey" | "creative" | "results";
 
+export type ConnectionState = "idle" | "live" | "reconnecting" | "error";
+
 export interface CampaignBrief {
   campaignName: string;
   productName: string;

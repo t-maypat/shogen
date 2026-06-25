@@ -6,9 +6,10 @@ import {
   CircleHelp,
   Command,
   Radio,
+  Satellite,
   Search,
 } from "lucide-react";
-import type { CampaignStatus, TabId } from "../types";
+import type { CampaignStatus, ConnectionState, TabId } from "../types";
 
 const tabs: { id: TabId; label: string; number: string }[] = [
   { id: "brief", label: "Brief", number: "01" },
@@ -27,9 +28,18 @@ const statusLabels: Record<CampaignStatus, string> = {
   failed: "Needs attention",
 };
 
+const connectionLabels: Record<ConnectionState, string> = {
+  live: "Live",
+  reconnecting: "Reconnecting",
+  error: "Disconnected",
+  idle: "Idle",
+};
+
 interface AppHeaderProps {
   activeTab: TabId;
   status: CampaignStatus;
+  connection?: ConnectionState;
+  replayMode?: boolean;
   onTabChange: (tab: TabId) => void;
   onOpenActivity: () => void;
   onToast?: (message: string) => void;
@@ -39,6 +49,8 @@ interface AppHeaderProps {
 export function AppHeader({
   activeTab,
   status,
+  connection = "idle",
+  replayMode,
   onTabChange,
   onOpenActivity,
   onToast,
@@ -49,7 +61,10 @@ export function AppHeader({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (switcherRef.current && !switcherRef.current.contains(event.target as Node)) {
+      if (
+        switcherRef.current &&
+        !switcherRef.current.contains(event.target as Node)
+      ) {
         setIsSwitcherOpen(false);
       }
     }
@@ -84,11 +99,11 @@ export function AppHeader({
             </span>
             <ChevronDown size={15} />
           </button>
-          
+
           {isSwitcherOpen && (
             <div className="campaign-dropdown">
               <div className="dropdown-header">Recent campaigns</div>
-              <button 
+              <button
                 className="dropdown-item active"
                 onClick={() => {
                   setIsSwitcherOpen(false);
@@ -97,11 +112,13 @@ export function AppHeader({
               >
                 <span className="campaign-monogram">NW</span>
                 <div className="item-content">
-                  <div className="item-title">NestWise · Summer acquisition</div>
+                  <div className="item-title">
+                    NestWise · Summer acquisition
+                  </div>
                   <div className="item-subtitle">Updated 2 mins ago</div>
                 </div>
               </button>
-              <button 
+              <button
                 className="dropdown-item"
                 onClick={() => {
                   setIsSwitcherOpen(false);
@@ -114,7 +131,7 @@ export function AppHeader({
                   <div className="item-subtitle">Updated 3 days ago</div>
                 </div>
               </button>
-              <button 
+              <button
                 className="dropdown-item"
                 onClick={() => {
                   setIsSwitcherOpen(false);
@@ -128,7 +145,7 @@ export function AppHeader({
                 </div>
               </button>
               <div className="dropdown-divider" />
-              <button 
+              <button
                 className="dropdown-item action-item"
                 onClick={() => {
                   setIsSwitcherOpen(false);
@@ -195,9 +212,16 @@ export function AppHeader({
           ))}
         </nav>
         <div className="workspace-meta">
-          <span className="mode-badge">
-            <Radio size={13} /> Replay
-          </span>
+          {replayMode !== undefined && (
+            <span className="mode-badge">
+              {replayMode ? <Radio size={13} /> : <Satellite size={13} />}{" "}
+              {replayMode ? "Replay" : "Live"}
+            </span>
+          )}
+          <span
+            className={`connection-dot connection-${connection}`}
+            title={connectionLabels[connection]}
+          />
           <button
             className={`status-pill status-${status}`}
             type="button"

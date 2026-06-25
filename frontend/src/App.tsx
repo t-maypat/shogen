@@ -8,12 +8,18 @@ import { ResultsTab } from "./components/results/ResultsTab";
 import { blankBrief, completedStages, demoBrief, kpis } from "./data/demo";
 import { api } from "./api/client";
 import { subscribeToCampaign } from "./api/events";
-import type { CampaignStatus, TabId, WorkflowStage, CampaignBrief, WorkflowEvent } from "./types";
+import type {
+  CampaignStatus,
+  TabId,
+  WorkflowStage,
+  CampaignBrief,
+  WorkflowEvent,
+} from "./types";
 
 const backendToFrontendStage = (backendStage: string): string => {
   if (backendStage === "mock_deployment") return "deploy";
   return backendStage;
-}
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>("brief");
@@ -40,7 +46,11 @@ export default function App() {
   };
 
   const updateStage = (id: string, nextStatus: WorkflowStage["status"]) => {
-    setStages((current) => current.map((stage) => stage.id === id ? { ...stage, status: nextStatus } : stage));
+    setStages((current) =>
+      current.map((stage) =>
+        stage.id === id ? { ...stage, status: nextStatus } : stage,
+      ),
+    );
   };
 
   // Subscribe to SSE whenever campaignId changes
@@ -111,14 +121,15 @@ export default function App() {
 
           case "workflow.failed":
             setStatus("failed");
-            if (event.stage) updateStage(backendToFrontendStage(event.stage), "failed");
+            if (event.stage)
+              updateStage(backendToFrontendStage(event.stage), "failed");
             toast("Workflow failed");
             break;
         }
       },
       () => {
         console.log("SSE reconnected");
-      }
+      },
     );
 
     unsubRef.current = unsubscribe;
@@ -126,8 +137,13 @@ export default function App() {
   }, [campaignId]);
 
   const initStages = () => {
-    setStages(completedStages.map((stage, index) => ({ ...stage, status: index === 0 ? "completed" : "pending" })));
-  }
+    setStages(
+      completedStages.map((stage, index) => ({
+        ...stage,
+        status: index === 0 ? "completed" : "pending",
+      })),
+    );
+  };
 
   // Bug 4 fix: startReplay already kicks off the workflow thread on the backend,
   // so we only need to set the campaignId (which triggers the SSE subscription).
@@ -184,15 +200,53 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader activeTab={activeTab} status={status} onTabChange={setActiveTab} onOpenActivity={() => setActivityOpen(true)} onToast={toast} onCreateNewCampaign={createNewCampaign} />
+      <AppHeader
+        activeTab={activeTab}
+        status={status}
+        onTabChange={setActiveTab}
+        onOpenActivity={() => setActivityOpen(true)}
+        onToast={toast}
+        onCreateNewCampaign={createNewCampaign}
+      />
       <main className="workspace-main">
-        {activeTab === "brief" && <BriefTab key={briefKey} initialBrief={briefData} initialKpis={briefData === blankBrief ? [] : kpis} status={status} onRunReplay={runReplay} onStartLive={startLiveRun} />}
-        {activeTab === "journey" && <JourneyTab stages={stages} status={status} onOpenCreative={() => setActiveTab("creative")} />}
-        {activeTab === "creative" && <CreativeTab status={status} onApprove={approve} />}
-        {activeTab === "results" && <ResultsTab status={status} onReviewCreative={() => setActiveTab("creative")} />}
+        {activeTab === "brief" && (
+          <BriefTab
+            key={briefKey}
+            initialBrief={briefData}
+            initialKpis={briefData === blankBrief ? [] : kpis}
+            status={status}
+            onRunReplay={runReplay}
+            onStartLive={startLiveRun}
+          />
+        )}
+        {activeTab === "journey" && (
+          <JourneyTab
+            stages={stages}
+            status={status}
+            onOpenCreative={() => setActiveTab("creative")}
+          />
+        )}
+        {activeTab === "creative" && (
+          <CreativeTab status={status} onApprove={approve} />
+        )}
+        {activeTab === "results" && (
+          <ResultsTab
+            status={status}
+            onReviewCreative={() => setActiveTab("creative")}
+          />
+        )}
       </main>
-      <ActivityPanel open={activityOpen} stages={stages} onClose={() => setActivityOpen(false)} />
-      {notice && <div className="toast" role="status"><span className="toast-mark">S</span>{notice}</div>}
+      <ActivityPanel
+        open={activityOpen}
+        stages={stages}
+        onClose={() => setActivityOpen(false)}
+      />
+      {notice && (
+        <div className="toast" role="status">
+          <span className="toast-mark">S</span>
+          {notice}
+        </div>
+      )}
     </div>
   );
 }
