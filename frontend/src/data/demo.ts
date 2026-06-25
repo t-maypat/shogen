@@ -25,6 +25,20 @@ export const demoBrief: CampaignBrief = {
   channels: ["google_search", "linkedin_sponsored_post", "email"],
 };
 
+export const blankBrief: CampaignBrief = {
+  campaignName: "",
+  productName: "",
+  productCategory: "",
+  objective: "",
+  audienceSummary: "",
+  budgetRange: "",
+  durationDays: 30,
+  brandVoice: [],
+  requiredClaims: [],
+  riskyClaims: [],
+  channels: ["google_search", "linkedin_sponsored_post", "email"],
+};
+
 export const kpis: KPI[] = [
   {
     id: "kpi1",

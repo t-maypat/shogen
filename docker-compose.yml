@@ -2,6 +2,7 @@ services:
   backend:
     build:
       context: ./backend
+    env_file: .env
     environment:
       SHOGEN_APP_NAME: ${SHOGEN_APP_NAME:-Shogen Backend}
       SHOGEN_ENVIRONMENT: ${SHOGEN_ENVIRONMENT:-local}

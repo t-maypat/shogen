@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import {
   Activity,
   Bell,
@@ -32,6 +33,7 @@ interface AppHeaderProps {
   onTabChange: (tab: TabId) => void;
   onOpenActivity: () => void;
   onToast?: (message: string) => void;
+  onCreateNewCampaign?: () => void;
 }
 
 export function AppHeader({
@@ -40,7 +42,21 @@ export function AppHeader({
   onTabChange,
   onOpenActivity,
   onToast,
+  onCreateNewCampaign,
 }: AppHeaderProps) {
+  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (switcherRef.current && !switcherRef.current.contains(event.target as Node)) {
+        setIsSwitcherOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
     <>
       <header className="app-header">
@@ -54,17 +70,80 @@ export function AppHeader({
           </div>
         </div>
 
-        <button
-          className="campaign-switcher"
-          type="button"
-          onClick={() => onToast?.("Campaign switcher opened")}
-        >
-          <span className="campaign-monogram">NW</span>
-          <span>
-            <small>Active campaign</small>NestWise · Summer acquisition
-          </span>
-          <ChevronDown size={15} />
-        </button>
+        <div className="header-divider" />
+
+        <div className="campaign-switcher-container" ref={switcherRef}>
+          <button
+            className="campaign-switcher"
+            type="button"
+            onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
+          >
+            <span className="campaign-monogram">NW</span>
+            <span>
+              <small>Active campaign</small>NestWise · Summer acquisition
+            </span>
+            <ChevronDown size={15} />
+          </button>
+          
+          {isSwitcherOpen && (
+            <div className="campaign-dropdown">
+              <div className="dropdown-header">Recent campaigns</div>
+              <button 
+                className="dropdown-item active"
+                onClick={() => {
+                  setIsSwitcherOpen(false);
+                  onToast?.("Switched to NestWise");
+                }}
+              >
+                <span className="campaign-monogram">NW</span>
+                <div className="item-content">
+                  <div className="item-title">NestWise · Summer acquisition</div>
+                  <div className="item-subtitle">Updated 2 mins ago</div>
+                </div>
+              </button>
+              <button 
+                className="dropdown-item"
+                onClick={() => {
+                  setIsSwitcherOpen(false);
+                  onToast?.("Switched to Zenith Bank");
+                }}
+              >
+                <span className="campaign-monogram">ZB</span>
+                <div className="item-content">
+                  <div className="item-title">Zenith Bank · Youth savings</div>
+                  <div className="item-subtitle">Updated 3 days ago</div>
+                </div>
+              </button>
+              <button 
+                className="dropdown-item"
+                onClick={() => {
+                  setIsSwitcherOpen(false);
+                  onToast?.("Switched to Acme Corp");
+                }}
+              >
+                <span className="campaign-monogram">AC</span>
+                <div className="item-content">
+                  <div className="item-title">Acme Corp · B2B Outreach</div>
+                  <div className="item-subtitle">Updated 1 week ago</div>
+                </div>
+              </button>
+              <div className="dropdown-divider" />
+              <button 
+                className="dropdown-item action-item"
+                onClick={() => {
+                  setIsSwitcherOpen(false);
+                  if (onCreateNewCampaign) {
+                    onCreateNewCampaign();
+                  } else {
+                    onToast?.("Create new campaign clicked");
+                  }
+                }}
+              >
+                + Create new campaign
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="header-actions">
           <button

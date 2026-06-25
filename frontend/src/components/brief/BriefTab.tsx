@@ -17,11 +17,14 @@ import {
   X,
 } from "lucide-react";
 import { demoBrief, kpis } from "../../data/demo";
-import type { CampaignBrief, CampaignStatus } from "../../types";
+import type { CampaignBrief, CampaignStatus, KPI } from "../../types";
 
 interface BriefTabProps {
   status: CampaignStatus;
   onRunReplay: () => void;
+  onStartLive: (brief: CampaignBrief) => void;
+  initialBrief?: CampaignBrief;
+  initialKpis?: KPI[];
 }
 
 const channelMeta = [
@@ -30,9 +33,9 @@ const channelMeta = [
   { icon: Mail, label: "Email", detail: "Nurture and conversion" },
 ];
 
-export function BriefTab({ status, onRunReplay }: BriefTabProps) {
-  const [brief, setBrief] = useState<CampaignBrief>(demoBrief);
-  const [localKpis, setLocalKpis] = useState(kpis);
+export function BriefTab({ status, onRunReplay, onStartLive, initialBrief = demoBrief, initialKpis = kpis }: BriefTabProps) {
+  const [brief, setBrief] = useState<CampaignBrief>(initialBrief);
+  const [localKpis, setLocalKpis] = useState(initialKpis);
 
   const setField = <K extends keyof CampaignBrief>(
     key: K,
@@ -188,9 +191,18 @@ export function BriefTab({ status, onRunReplay }: BriefTabProps) {
                       <X size={12} />
                     </button>
                   ))}
-                  <button type="button" className="chip-add">
-                    <Plus size={13} /> Add tone
-                  </button>
+                  <input
+                    type="text"
+                    className="chip-input-field"
+                    placeholder="+ Add tone"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                        e.preventDefault();
+                        setField("brandVoice", [...brief.brandVoice, e.currentTarget.value.trim()]);
+                        e.currentTarget.value = "";
+                      }
+                    }}
+                  />
                 </div>
               </div>
               <div className="field">
@@ -208,6 +220,18 @@ export function BriefTab({ status, onRunReplay }: BriefTabProps) {
                       <X size={11} />
                     </button>
                   ))}
+                  <input
+                    type="text"
+                    className="chip-input-field"
+                    placeholder="+ Add claim"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                        e.preventDefault();
+                        setField("requiredClaims", [...brief.requiredClaims, e.currentTarget.value.trim()]);
+                        e.currentTarget.value = "";
+                      }
+                    }}
+                  />
                 </div>
               </div>
               <div className="field">
@@ -226,6 +250,18 @@ export function BriefTab({ status, onRunReplay }: BriefTabProps) {
                       <X size={11} />
                     </button>
                   ))}
+                  <input
+                    type="text"
+                    className="chip-input-field"
+                    placeholder="+ Add claim"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                        e.preventDefault();
+                        setField("riskyClaims", [...brief.riskyClaims, e.currentTarget.value.trim()]);
+                        e.currentTarget.value = "";
+                      }
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -361,10 +397,10 @@ export function BriefTab({ status, onRunReplay }: BriefTabProps) {
             <button
               type="button"
               className="secondary-button live-button"
-              title="Connect VITE_API_BASE_URL to enable a live run"
+              disabled={running}
+              onClick={() => onStartLive(brief)}
             >
-              <span className="live-dot" /> Start live run{" "}
-              <span className="api-required">API required</span>
+              <span className="live-dot" /> Start live run
             </button>
             <p className="replay-note">
               <Info size={13} /> Replay uses cached, schema-valid outputs and
